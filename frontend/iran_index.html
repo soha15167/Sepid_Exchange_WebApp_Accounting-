@@ -7,34 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
   <style>
-    :root{
-      --bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;
-      --green:#22c55e;--orange:#f59e0b;--shadow:0 18px 45px rgba(15,23,42,.12);--r:18px
-    }
-    *{box-sizing:border-box}
-    body{margin:0;font-family:"Vazirmatn",system-ui;background:var(--bg);color:var(--text);padding:16px}
-    .wrap{max-width:1200px;margin:0 auto}
-    .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:6px 0 12px}
-    h1{margin:0;font-size:18px;font-weight:900}
-    .btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:10px 14px;font-family:inherit;font-weight:900;cursor:pointer}
-    .btn.primary{background:var(--green);border-color:transparent;color:#fff}
-    .btn.orange{background:var(--orange);border-color:transparent;color:#111827}
     .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     @media (max-width:900px){.cards{grid-template-columns:1fr}}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
-    .pill{background:#f9fafb;border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--muted)}
-    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
-    input,select{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px;font-family:inherit}
-    .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px}
-    table{width:100%;border-collapse:collapse;background:#fff;min-width:520px}
-    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-size:13px;font-variant-numeric:tabular-nums}
-    th{background:#f9fafb;font-weight:900;color:#374151;position:sticky;top:0}
-    .muted{color:var(--muted);font-size:12px;line-height:1.8}
     .toast{position:fixed;bottom:18px;right:18px;background:#111827;color:#fff;padding:12px 14px;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.25);opacity:0;transform:translateY(8px);transition:.2s ease;font-size:13px;z-index:9999}
     .toast.show{opacity:1;transform:translateY(0)}
-    /* popup date */
     .overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:9998}
     .overlay.show{display:flex}
     .modal{background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(520px,92vw);padding:14px;border:1px solid var(--line)}
@@ -44,18 +22,20 @@
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <h1>پنل ایران</h1>
+<div class="page">
+  <div class="topbar sticky">
+    <div class="title">پنل ایران</div>
     <div class="row">
-      <button class="btn" onclick="location.href='/iran/report'">📋 گزارش</button>
-      <button class="btn" onclick="location.href='/iran/output'">➖ خروجی</button>
-      <button class="btn primary" onclick="location.href='/iran/input'">➕ ورودی</button>
+      <a class="btnLink btn" href="/iran/report">📋 گزارش</a>
+      <a class="btnLink btn red" href="/iran/output">➖ خروجی</a>
+      <a class="btnLink btn green" href="/iran/input">➕ ورودی</a>
+      <a class="btnLink btn orange" href="/static/monthly_reports.html" target="_blank">🧾 PDF ماهانه</a>
+      <a class="btnLink btn" href="/">← صفحه اول</a>
     </div>
   </div>
 
   <div class="cards">
-    <div class="card">
+    <div class="card pad">
       <div class="row">
         <div class="pill">مالیات تسویه‌نشده: <b id="pendingTax">—</b> ریال</div>
         <div class="pill">مانده کل (بانک‌های معمولی): <b id="totalBalance">—</b> ریال</div>
@@ -92,7 +72,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card pad">
       <div class="row">
         <div class="pill">موجودی بانک‌های معمولی</div>
         <button class="btn" id="btnRefresh">↻ بروزرسانی</button>

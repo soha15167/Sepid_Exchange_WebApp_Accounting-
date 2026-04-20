@@ -4,26 +4,10 @@
   <meta charset="UTF-8" />
   <title>گزارش تراکنش‌ها</title>
   <link href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003-FD/font-face.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
   <style>
-    body {
-      font-family: Vazirmatn, sans-serif;
-      background-color: #f9f9f9;
-      padding: 16px;
-    }
-
-    h2 {
-      text-align: center;
-      margin-bottom: 20px;
-      font-size: 22px;
-    }
-
-    .card {
-      background-color: white;
-      border-radius: 16px;
-      padding: 16px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
-      margin-bottom: 20px;
-    }
+    body{margin:0;padding:0}
+    h2{margin:0;font-size:18px;font-weight:900}
 
     .field-row {
       display: flex;
@@ -61,29 +45,7 @@
       line-height: 1.4;
     }
 
-    .actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 10px;
-    }
-
-    .edit-btn {
-      background-color: #4caf50;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
-    .delete-btn {
-      background-color: #f44336;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
+    .actions{display:flex;gap:10px;margin-top:10px}
 
     @media (min-width: 768px) {
       .field-row {
@@ -93,8 +55,17 @@
   </style>
 </head>
 <body>
-  <h2>گزارش تراکنش‌های آلمان</h2>
-  <div id="report_container"></div>
+  <div class="page" style="max-width:1200px">
+    <div class="topbar sticky">
+      <div class="title">گزارش تراکنش‌های آلمان</div>
+      <div class="row">
+        <a class="btnLink btn" href="/de">← بازگشت</a>
+      </div>
+      <div class="hint">ویرایش و حذف تراکنش‌ها</div>
+    </div>
+
+    <div id="report_container"></div>
+  </div>
 
   <script>
     const channel = new BroadcastChannel("transactions");
@@ -136,7 +107,7 @@
 
       data.forEach((t, index) => {
         const card = document.createElement("div");
-        card.className = "card";
+        card.className = "card pad";
         card.innerHTML = `
           <div class="field-row"><label>شماره</label><input value="${index + 1}" disabled></div>
           <div class="field-row"><label>تاریخ</label><input type="date" value="${dateValue(t.date)}" id="date-${t.id}"></div>
@@ -151,8 +122,8 @@
           <div class="field-row"><label>فروشنده</label><input value="${t.seller_name || ''}" id="seller-${t.id}"></div>
           <div class="field-row"><label>توضیحات</label><textarea rows="2" id="desc-${t.id}">${t.description || ''}</textarea></div>
           <div class="actions">
-            <button class="edit-btn" onclick="updateTransaction(${t.id})">ویرایش</button>
-            <button class="delete-btn" onclick="deleteTransaction(${t.id})">❌</button>
+            <button class="btn green" onclick="updateTransaction(${t.id})">ویرایش</button>
+            <button class="btn red" onclick="deleteTransaction(${t.id})">حذف</button>
           </div>
         `;
         container.appendChild(card);

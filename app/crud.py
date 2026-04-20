@@ -121,11 +121,20 @@ def _safe_jdate(jdate: Optional[str]) -> Optional[str]:
 
 
 def _is_settle_transfer_type(transfer_type: Optional[str]) -> bool:
-    return str(transfer_type or "").strip().startswith("SETTLE_TAX|")
+    tt = str(transfer_type or "").strip()
+    return tt.startswith("SETTLE_TAX|") or tt.startswith("SETTLE_TAX_LOCK|")
+
+
+def _is_settle_locked(transfer_type: Optional[str]) -> bool:
+    return str(transfer_type or "").strip().startswith("SETTLE_TAX_LOCK|")
 
 
 def _settle_tag(jdate: str, tx_id: int | str) -> str:
     return f"SETTLE_TAX|{jdate}|{tx_id}"
+
+
+def _settle_lock_tag(jdate: str, tx_id: int | str) -> str:
+    return f"SETTLE_TAX_LOCK|{jdate}|{tx_id}"
 
 
 def _compute_fee(amount: float, transfer_type: str) -> float:
@@ -263,7 +272,10 @@ def _settle_transactions_for_date(db: Session, jdate: str) -> List[models.Transa
         .filter(
             _iran_filter(),
             models.Transaction.jdate == jd,
-            models.Transaction.transfer_type.like("SETTLE_TAX|%"),
+            or_(
+                models.Transaction.transfer_type.like("SETTLE_TAX|%"),
+                models.Transaction.transfer_type.like("SETTLE_TAX_LOCK|%"),
+            ),
         )
         .order_by(models.Transaction.id.asc())
         .all()
@@ -288,6 +300,10 @@ def _reconcile_settlement_for_date(db: Session, jdate: Optional[str]) -> None:
 
     required = _required_tax_for_date(db, jd)
     settle_txs = _settle_transactions_for_date(db, jd)
+
+    # اگر تسویه این تاریخ «قفل دستی» باشد، reconcile نباید آن را تغییر دهد یا حذف کند.
+    if settle_txs and _is_settle_locked(settle_txs[0].transfer_type):
+        return
 
     # اگر دیگر مالیاتی لازم نیست، تسویه همان تاریخ حذف شود
     if required <= 0:
@@ -350,6 +366,14 @@ def create_transaction(db: Session, transaction: schemas.TransactionCreate) -> m
 
         _reconcile_settlement_for_date(db, obj.jdate)
 
+    # گزارش PDF ماهانه (ایران/آلمان) را به‌روز کن
+    try:
+        from . import reports
+
+        reports.regenerate_for_transaction_change(db, None, obj)
+    except Exception:
+        pass
+
     return obj
 
 
@@ -362,8 +386,11 @@ def update_transaction(
     if not obj:
         return None
 
-    old_type = obj.type
-    old_jdate = obj.jdate
+    old_snapshot = models.Transaction(
+        type=obj.type,
+        date=obj.date,
+        jdate=obj.jdate,
+    )
 
     data = transaction.model_dump(exclude_unset=True)
 
@@ -378,14 +405,17 @@ def update_transaction(
     # اگر ردیف تسویه باشد، ساختار آن حفظ شود
     if incoming_tt == "تسویه مالیات" or _is_settle_transfer_type(obj.transfer_type):
         jd_for_tag = data.get("jdate") or obj.jdate
+        wants_lock = incoming_tt.startswith("SETTLE_TAX_LOCK|") if incoming_tt else False
+        is_locked_now = _is_settle_locked(obj.transfer_type)
+        lock = wants_lock or is_locked_now
+
         if jd_for_tag:
-            data["transfer_type"] = _settle_tag(jd_for_tag, obj.id)
+            data["transfer_type"] = _settle_lock_tag(jd_for_tag, obj.id) if lock else _settle_tag(jd_for_tag, obj.id)
         else:
-            data["transfer_type"] = obj.transfer_type or "SETTLE_TAX|tmp"
+            data["transfer_type"] = obj.transfer_type or ("SETTLE_TAX_LOCK|tmp" if lock else "SETTLE_TAX|tmp")
 
         data["destination_bank"] = TAX_BANK
-        data["deposit_fee"] = 0
-        data["tax"] = 0
+        # fee/tax برای ردیف تسویه قابل ویرایش است (طبق نیاز شما)
 
     merged_for_auto = {
         "type": data.get("type", obj.type),
@@ -397,6 +427,23 @@ def update_transaction(
         "deposit_fee": data.get("deposit_fee", obj.deposit_fee),
         "tax": data.get("tax", obj.tax),
     }
+
+    # اگر خروجی واقعی ایران است، fee/tax باید همیشه مطابق مبلغ/نوع انتقال به‌روز شود.
+    # (UI ممکن است fee/tax قبلی را دوباره ارسال کند؛ اینجا عمداً override می‌کنیم.)
+    m_type = normalize_type(merged_for_auto.get("type"))
+    m_iran_type = (merged_for_auto.get("iran_type") or "").strip()
+    m_bank = (merged_for_auto.get("bank_name") or "").strip()
+    m_tt = (merged_for_auto.get("transfer_type") or "").strip()
+    is_real_iran_out = (
+        m_type == "ایران"
+        and m_iran_type == "خروجی"
+        and m_bank != TAX_BANK
+        and (not _is_settle_transfer_type(m_tt))
+    )
+    if is_real_iran_out:
+        merged_for_auto["deposit_fee"] = None
+        merged_for_auto["tax"] = None
+
     _apply_auto_fee_tax_if_needed(merged_for_auto)
 
     if merged_for_auto.get("type") == "ایران":
@@ -411,8 +458,8 @@ def update_transaction(
     db.refresh(obj)
 
     affected_dates = set()
-    if old_type in IRAN_TYPE_VALUES and old_jdate:
-        affected_dates.add(old_jdate)
+    if (old_snapshot.type or "") in IRAN_TYPE_VALUES and old_snapshot.jdate:
+        affected_dates.add(old_snapshot.jdate)
     if obj.type == "ایران" and obj.jdate:
         affected_dates.add(obj.jdate)
 
@@ -420,6 +467,15 @@ def update_transaction(
         _reconcile_settlement_for_date(db, jd)
 
     db.refresh(obj)
+
+    # گزارش PDF ماهانه (ایران/آلمان) را به‌روز کن
+    try:
+        from . import reports
+
+        reports.regenerate_for_transaction_change(db, old_snapshot, obj)
+    except Exception:
+        pass
+
     return obj
 
 
@@ -428,14 +484,25 @@ def delete_transaction(db: Session, transaction_id: int) -> bool:
     if not obj:
         return False
 
-    jd = obj.jdate
-    typ = obj.type
+    old_snapshot = models.Transaction(
+        type=obj.type,
+        date=obj.date,
+        jdate=obj.jdate,
+    )
 
     db.delete(obj)
     db.commit()
 
-    if typ in IRAN_TYPE_VALUES and jd:
-        _reconcile_settlement_for_date(db, jd)
+    if (old_snapshot.type or "") in IRAN_TYPE_VALUES and old_snapshot.jdate:
+        _reconcile_settlement_for_date(db, old_snapshot.jdate)
+
+    # گزارش PDF ماهانه را به‌روز کن
+    try:
+        from . import reports
+
+        reports.regenerate_for_transaction_change(db, old_snapshot, None)
+    except Exception:
+        pass
 
     return True
 
@@ -461,7 +528,10 @@ def compute_iran_pending_tax(db: Session) -> float:
         db.query(models.Transaction)
         .filter(
             _iran_filter(),
-            models.Transaction.transfer_type.like("SETTLE_TAX|%"),
+            or_(
+                models.Transaction.transfer_type.like("SETTLE_TAX|%"),
+                models.Transaction.transfer_type.like("SETTLE_TAX_LOCK|%"),
+            ),
         )
         .all()
     )
@@ -545,24 +615,19 @@ def _richest_bank(db: Session) -> Optional[str]:
 
 def settle_iran_tax(db: Session, from_bank: str, jdate: str, description: str = "") -> Optional[Dict]:
     """
-    فقط یک ردیف تسویه برای هر تاریخ.
-    هنگام کلیک دکمه:
-    - مبلغ = کل مالیات لازم همان تاریخ
-    - بانک پرداخت‌کننده = بانکی که بیشترین مانده را دارد
-    - اگر قبلاً برای این تاریخ تسویه ثبت شده، همان ردیف آپدیت می‌شود
-    """
-    jd = _safe_jdate(jdate)
-    if not jd:
-        return None
+    تسویه مالیات به صورت بازه‌ای تا تاریخ انتخابی.
 
-    required = _required_tax_for_date(db, jd)
-    if required <= 0:
-        # اگر چیزی برای این تاریخ لازم نیست، settle قبلی هم پاک شود
-        existing = _settle_transactions_for_date(db, jd)
-        if existing:
-            for t in existing:
-                db.delete(t)
-            db.commit()
+    هنگام کلیک دکمه:
+    - تاریخ پایان = jdate (شامل همان روز)
+    - برای هر تاریخی که خروجی واقعی دارد، مبلغ تسویه = کل مالیات لازم همان تاریخ
+    - بانک پرداخت‌کننده = بانکی که بیشترین مانده را دارد (در لحظه کلیک)
+    - برای هر تاریخ فقط یک ردیف تسویه نگه می‌داریم؛ اگر قبلاً وجود داشته باشد آپدیت می‌شود
+
+    نکته: بعد از ویرایش/حذف/افزودن خروجی‌ها، به خاطر `_reconcile_settlement_for_date`
+    مبلغ تسویه همان تاریخ به صورت خودکار به‌روز می‌شود (بدون کلیک مجدد).
+    """
+    jd_end = _safe_jdate(jdate)
+    if not jd_end:
         return None
 
     # طبق خواسته تو، از بانکی که بیشترین مانده را دارد
@@ -575,48 +640,93 @@ def settle_iran_tax(db: Session, from_bank: str, jdate: str, description: str = 
     base_desc = f"تسویه مالیات → {TAX_BANK}"
     full_desc = base_desc + (f" — {desc}" if desc else "")
 
-    settle_txs = _settle_transactions_for_date(db, jd)
-
-    if settle_txs:
-        tx = settle_txs[0]
-        tx.type = "ایران"
-        tx.iran_type = "خروجی"
-        tx.bank_name = fb
-        tx.destination_bank = TAX_BANK
-        tx.iran_amount = required
-        tx.depositor_name = "تسویه مالیات"
-        tx.deposit_fee = 0
-        tx.tax = 0
-        tx.description = full_desc
-        tx.transfer_type = _settle_tag(jd, tx.id)
-
-        for extra in settle_txs[1:]:
-            db.delete(extra)
-
-        db.commit()
-        db.refresh(tx)
-        return {"settle_id": tx.id, "amount": required, "from_bank": fb}
-
-    settle_tx = models.Transaction(
-        type="ایران",
-        iran_type="خروجی",
-        bank_name=fb,
-        destination_bank=TAX_BANK,
-        iran_amount=required,
-        depositor_name="تسویه مالیات",
-        transfer_type="SETTLE_TAX|tmp",
-        deposit_fee=0,
-        tax=0,
-        description=full_desc,
-        date=datetime.now(),
-        jdate=jd,
+    # تاریخ‌هایی که تا تاریخ پایان، خروجی واقعی دارند و برایشان مالیات لازم است
+    real_outs = (
+        db.query(models.Transaction)
+        .filter(
+            _iran_filter(),
+            models.Transaction.iran_type == "خروجی",
+            models.Transaction.bank_name != TAX_BANK,
+            _not_settle_filter(),
+        )
+        .all()
     )
-    db.add(settle_tx)
-    db.commit()
-    db.refresh(settle_tx)
 
-    settle_tx.transfer_type = _settle_tag(jd, settle_tx.id)
-    db.commit()
-    db.refresh(settle_tx)
+    required_by_date: Dict[str, float] = {}
+    for t in real_outs:
+        jd = _safe_jdate(t.jdate)
+        if not jd or jd > jd_end:
+            continue
+        required_by_date[jd] = required_by_date.get(jd, 0.0) + round(float(t.iran_amount or 0) * AUTO_TAX_RATE)
 
-    return {"settle_id": settle_tx.id, "amount": required, "from_bank": fb}
+    # اگر تا این تاریخ چیزی برای تسویه نیست، کاری نکن
+    if not required_by_date:
+        return None
+
+    settled_dates: List[str] = []
+    total_amount = 0.0
+    last_settle_id: Optional[int] = None
+
+    for jd in sorted(required_by_date.keys()):
+        required = float(required_by_date.get(jd) or 0.0)
+        if required <= 0:
+            continue
+
+        settle_txs = _settle_transactions_for_date(db, jd)
+        if settle_txs:
+            tx = settle_txs[0]
+            tx.type = "ایران"
+            tx.iran_type = "خروجی"
+            tx.bank_name = fb
+            tx.destination_bank = TAX_BANK
+            tx.iran_amount = required
+            tx.depositor_name = "تسویه مالیات"
+            tx.deposit_fee = 0
+            tx.tax = 0
+            tx.description = full_desc
+            tx.jdate = jd
+            tx.transfer_type = _settle_tag(jd, tx.id)
+
+            for extra in settle_txs[1:]:
+                db.delete(extra)
+
+            db.commit()
+            db.refresh(tx)
+            last_settle_id = tx.id
+        else:
+            settle_tx = models.Transaction(
+                type="ایران",
+                iran_type="خروجی",
+                bank_name=fb,
+                destination_bank=TAX_BANK,
+                iran_amount=required,
+                depositor_name="تسویه مالیات",
+                transfer_type="SETTLE_TAX|tmp",
+                deposit_fee=0,
+                tax=0,
+                description=full_desc,
+                date=datetime.now(),
+                jdate=jd,
+            )
+            db.add(settle_tx)
+            db.commit()
+            db.refresh(settle_tx)
+
+            settle_tx.transfer_type = _settle_tag(jd, settle_tx.id)
+            db.commit()
+            db.refresh(settle_tx)
+            last_settle_id = settle_tx.id
+
+        total_amount += required
+        settled_dates.append(jd)
+
+    if not settled_dates:
+        return None
+
+    return {
+        "settle_id": last_settle_id,
+        "amount": total_amount,
+        "from_bank": fb,
+        "dates": settled_dates,
+        "end_date": jd_end,
+    }

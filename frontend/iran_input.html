@@ -7,38 +7,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
-  <style>
-    :root{--bg:#eef2f4;--card:#fff;--text:#111827;--muted:#6b7280;--border:#e5e7eb;--shadow:0 20px 50px rgba(0,0,0,.08);--r:18px}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:"Vazirmatn",system-ui;background:var(--bg);color:var(--text);padding:16px}
-    .wrap{max-width:900px;margin:0 auto}
-    .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-    h1{margin:0;font-size:18px;font-weight:900}
-    .btn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    @media (max-width:700px){.grid{grid-template-columns:1fr}}
-    label{display:block;font-size:12px;color:var(--muted);margin:8px 0 6px}
-    input,select,textarea{width:100%;border:1px solid var(--border);border-radius:14px;padding:12px;font-family:inherit;font-variant-numeric:tabular-nums}
-    textarea{min-height:90px;resize:vertical}
-    .ok{background:#22c55e;color:#fff;border:0;border-radius:14px;padding:12px 14px;font-weight:900;cursor:pointer}
-    .msg{margin-top:10px;color:#111827;font-weight:800}
-    .muted{color:var(--muted);font-size:12px;line-height:1.8}
-    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:9998}
-    .overlay.show{display:flex}
-    .modal{background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(520px,92vw);padding:14px;border:1px solid var(--border)}
-    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-    @media (max-width:520px){.grid3{grid-template-columns:1fr}}
-  </style>
+  <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <h1>ورودی به حساب (ایران)</h1>
-    <button class="btn" onclick="location.href='/iran'">بازگشت</button>
+<div class="page">
+  <div class="topbar sticky">
+    <div class="title">ورودی به حساب (ایران)</div>
+    <div class="row">
+      <a class="btnLink btn" href="/iran">← بازگشت</a>
+    </div>
   </div>
 
-  <div class="card">
+  <div class="card pad">
     <p class="muted" style="margin:0 0 10px">
       اگر بانک را روی <b>سامان (مالیات)</b> بگذاری، این واریزی وارد موجودی کل بانک‌های معمولی نمی‌شود (صندوق جداست).
     </p>
@@ -80,7 +60,7 @@
       </div>
 
       <div style="grid-column:1/-1;display:flex;justify-content:flex-end">
-        <button class="ok" id="save">ثبت ورودی</button>
+        <button class="btn green" id="save">ثبت ورودی</button>
       </div>
     </div>
 

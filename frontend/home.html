@@ -5,43 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sepid Exchange | انتخاب بخش</title>
   <link rel="icon" href="/static/favicon.ico">
-  <style>
-    :root{--bg1:#0b1023;--bg2:#151e3a;--card:#111827;--text:#e5e7eb;--muted:#94a3b8;--green:#22c55e;--blue:#3b82f6}
-    *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,var(--bg1),var(--bg2));font-family:system-ui,Segoe UI,Roboto}
-    .wrap{width:100%;max-width:960px;padding:28px}
-    h1{color:var(--text);text-align:center;margin:0 0 10px;font-size:clamp(22px,4vw,32px);font-weight:800}
-    .sub{color:var(--muted);text-align:center;margin:0 0 28px}
-    .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-    .card{background:rgba(17,24,39,55);border:1px solid rgba(148,163,184,15);border-radius:16px;padding:22px;backdrop-filter:blur(6px);transition:.22s transform,.22s box-shadow}
-    .card:hover{transform:translateY(-3px);box-shadow:0 18px 40px rgba(0,0,0,35)}
-    .card h2{margin:0 0 8px;color:var(--text);font-size:20px}
-    .card p{margin:0 0 14px;color:var(--muted);line-height:1.7}
-    .btn{display:inline-block;padding:10px 16px;border-radius:12px;font-weight:700;text-decoration:none;background:#1f2937;color:#fff;border:1px solid rgba(148,163,184,25)}
-    .btn.blue{background:var(--blue)}
-    .btn.green{background:var(--green)}
-    footer{margin-top:22px;text-align:center;color:#94a3b8;font-size:12px}
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003-FD/font-face.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
+  <div class="hero">
   <div class="wrap">
     <h1>سپید اکسچنج — انتخاب بخش حسابداری</h1>
     <p class="sub">لطفاً یکی از بخش‌های زیر را انتخاب کنید.</p>
 
-    <div class="grid">
-      <div class="card">
+    <div class="heroGrid">
+      <div class="heroCard">
         <h2>حسابداری آلمان</h2>
         <p>ثبت و گزارش تراکنش‌ها با منطق فعلی Euro ⇄ Toman.</p>
-        <a class="btn blue" href="/de">ورود به حسابداری آلمان</a>
+        <a class="btnLink btn blue" href="/de">ورود به حسابداری آلمان</a>
       </div>
-      <div class="card">
+      <div class="heroCard">
         <h2>حسابداری ایران</h2>
         <p>ورودی/خروجی + گزارش + تسویه مالیات و موجودی بانک‌ها.</p>
-        <a class="btn green" href="/iran">ورود به حسابداری ایران</a>
+        <a class="btnLink btn green" href="/iran">ورود به حسابداری ایران</a>
       </div>
     </div>
 
-    <footer>Sepid Exchange Account</footer>
+    <div class="heroFooter">Sepid Exchange Account</div>
+  </div>
   </div>
 </body>
 </html>

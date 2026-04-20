@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -12,7 +12,7 @@ from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal, engine
-from . import models, schemas, crud
+from . import models, schemas, crud, reports
 
 app = FastAPI(title="Sepid Exchange Account")
 
@@ -240,3 +240,57 @@ def health():
 @app.get("/favicon.ico")
 def favicon():
     return Response(content="", media_type="image/x-icon")
+
+
+@app.get("/reports")
+def api_reports_index(db: Session = Depends(get_db)):
+    return reports.get_reports_index(db)
+
+
+@app.get("/reports/{region}/{month}")
+def api_get_report(region: str, month: str, db: Session = Depends(get_db)):
+    if region not in ("iran", "de"):
+        raise HTTPException(status_code=400, detail="Invalid region")
+    p = reports.report_path(region, month)  # type: ignore[arg-type]
+    if not p.exists():
+        # auto-generate on demand if month exists in DB
+        try:
+            reports.regenerate_month_pdf(db, region, month)  # type: ignore[arg-type]
+        except Exception:
+            pass
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Report not found")
+    # inline باعث می‌شود داخل مرورگر/iframe نمایش داده شود (نه دانلود اجباری)
+    return FileResponse(
+        str(p),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{p.name}"'},
+    )
+
+
+class ReportRenamePayload(BaseModel):
+    display_name: str
+
+
+@app.put("/reports/{region}/{month}")
+def api_rename_report(region: str, month: str, payload: ReportRenamePayload):
+    if region not in ("iran", "de"):
+        raise HTTPException(status_code=400, detail="Invalid region")
+    reports.set_display_name(region, month, payload.display_name)  # type: ignore[arg-type]
+    return {"ok": True}
+
+
+@app.post("/reports/{region}/{month}/regenerate")
+def api_regenerate_report(region: str, month: str, db: Session = Depends(get_db)):
+    if region not in ("iran", "de"):
+        raise HTTPException(status_code=400, detail="Invalid region")
+    p = reports.regenerate_month_pdf(db, region, month)  # type: ignore[arg-type]
+    return {"ok": True, "path": str(p)}
+
+
+@app.delete("/reports/{region}/{month}")
+def api_delete_report(region: str, month: str):
+    if region not in ("iran", "de"):
+        raise HTTPException(status_code=400, detail="Invalid region")
+    reports.delete_report(region, month)  # type: ignore[arg-type]
+    return {"ok": True}
