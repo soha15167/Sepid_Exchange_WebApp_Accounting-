@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>گزارش‌های ماهانه (PDF)</title>
+  <link href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003-FD/font-face.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    body{margin:0;padding:0}
+    .wrap{display:grid;grid-template-columns:360px 1fr;gap:14px}
+    @media (max-width: 900px){.wrap{grid-template-columns:1fr}}
+    .list{display:flex;flex-direction:column;gap:8px}
+    .item{border:1px solid var(--line);border-radius:12px;padding:10px}
+    .name{font-weight:900}
+    iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:16px;background:#fff}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar sticky">
+      <div class="title">گزارش‌های ماهانه (PDF)</div>
+      <div class="row">
+        <a class="btnLink btn" href="/iran">← بازگشت به پنل ایران</a>
+      </div>
+      <div class="hint">گزارش‌های ماهانه ایران (PDF)</div>
+    </div>
+
+    <div class="wrap">
+    <div class="card pad">
+      <h2>لیست گزارش‌ها</h2>
+      <button class="btn blue" id="refresh">بروزرسانی لیست</button>
+      <div style="height:10px"></div>
+      <h3>ایران (شمسی)</h3>
+      <div class="list" id="iranList"></div>
+      <div style="height:14px"></div>
+      <div class="muted">برای بخش ایران طراحی شده است.</div>
+    </div>
+
+    <div class="card pad">
+      <h2 id="viewerTitle">نمایش PDF</h2>
+      <iframe id="viewer" src="about:blank"></iframe>
+    </div>
+    </div>
+  </div>
+
+  <script>
+    const viewer = document.getElementById('viewer');
+    const viewerTitle = document.getElementById('viewerTitle');
+
+    function esc(s){return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");}
+
+    function itemHtml(r){
+      const title = esc(r.display_name || (r.region.toUpperCase() + " " + r.month));
+      const meta = r.exists
+        ? (r.updated_at ? `آخرین بروزرسانی: ${esc(r.updated_at)}` : 'فایل موجود است')
+        : 'فایل ساخته نشده/حذف شده (برای ساخت «بازسازی» بزن)';
+      return `
+        <div class="item">
+          <div class="row">
+            <div>
+              <div class="name">${title}</div>
+              <div class="muted">${esc(r.region)} • ${esc(r.month)} • ${meta}</div>
+            </div>
+          </div>
+          <div style="height:8px"></div>
+          <div class="row">
+            <button class="btn" data-act="view">نمایش</button>
+            <button class="btn4" data-act="regen">بازسازی</button>
+            <button class="btn3" data-act="del">حذف</button>
+          </div>
+          <div style="height:8px"></div>
+          <div class="row">
+            <input data-act="name" placeholder="تغییر نام نمایشی" style="flex:1;min-width:180px" />
+            <button class="btn2" data-act="rename">ثبت نام</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function load(){
+      const res = await fetch('/reports');
+      const j = await res.json();
+      const iran = Array.isArray(j.iran) ? j.iran : [];
+
+      const iranList = document.getElementById('iranList');
+      iranList.innerHTML = iran.length ? iran.map(itemHtml).join('') : `<div class="muted">گزارشی برای ایران پیدا نشد.</div>`;
+
+      bind(iranList, iran);
+    }
+
+    function bind(container, arr){
+      const items = container.querySelectorAll('.item');
+      items.forEach((el, idx)=>{
+        const r = arr[idx];
+        el.querySelector('[data-act="view"]').addEventListener('click', ()=>{
+          viewerTitle.textContent = `نمایش PDF: ${r.region.toUpperCase()} ${r.month}`;
+          viewer.src = `/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}?v=${Date.now()}`;
+        });
+        el.querySelector('[data-act="regen"]').addEventListener('click', async ()=>{
+          await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}/regenerate`, {method:'POST'});
+          await load();
+        });
+        el.querySelector('[data-act="del"]').addEventListener('click', async ()=>{
+          if(!confirm('حذف شود؟')) return;
+          await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}`, {method:'DELETE'});
+          if(viewer.src.includes(`/reports/${r.region}/${r.month}`)) viewer.src = 'about:blank';
+          await load();
+        });
+        el.querySelector('[data-act="rename"]').addEventListener('click', async ()=>{
+          const name = el.querySelector('[data-act="name"]').value || '';
+          await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}`, {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({display_name: name})
+          });
+          await load();
+        });
+      });
+    }
+
+    document.getElementById('refresh').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>
+
