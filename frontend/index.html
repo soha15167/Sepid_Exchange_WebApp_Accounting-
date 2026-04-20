@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>برنامه حسابداری ساده</title>
+  <link href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003-FD/font-face.css" rel="stylesheet" />
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  <style>
+    body { font-family: Vazirmatn, sans-serif; background-color: #f9f9f9; color: #222; margin: 0; padding: 20px; direction: rtl; }
+    .container { max-width: 700px; margin: auto; }
+    h2 { text-align: center; margin-bottom: 10px; font-size: 22px; }
+    p#balance { text-align: center; font-weight: bold; margin-bottom: 30px; font-size: 18px; }
+    input[type="text"], input[type="number"] { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); box-sizing: border-box; }
+    .checkbox { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .fee-section { display: none; }
+    button { width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; transition: background-color 0.2s ease; }
+    button:hover { opacity: 0.9; }
+    button:nth-of-type(1) { background-color: #4caf50; color: white; }
+    button:nth-of-type(2) { background-color: #2196f3; color: white; }
+    button:nth-of-type(3) { background-color: #9c27b0; color: white; }
+    .modal { display: none; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -20%); background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.2); z-index: 1000; max-width: 90%; width: 400px; }
+    #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; }
+    @media (max-width: 600px) { input, button { font-size: 14px; padding: 10px; } }
+  </style>
+</head>
+<body>
+  <div style="max-width:700px;margin:0 auto 10px;display:flex;justify-content:space-between;align-items:center">
+    <a href="/" style="text-decoration:none;color:#111827;font-weight:700">← بازگشت به صفحهٔ اصلی</a>
+    <span style="color:#6b7280;font-size:13px">حسابداری آلمان</span>
+  </div>
+  <div class="container">
+    <h2>برنامه حسابداری</h2>
+    <p id="balance">موجودی: ۰ تومان</p>
+
+    <input type="text" id="amount" placeholder="مقدار به یورو">
+    <input type="text" id="rate_sell" placeholder="نرخ فروش یورو">
+    <input type="text" id="rate_buy" placeholder="نرخ خرید یورو">
+    <input type="text" id="buyer" placeholder="نام خریدار">
+    <input type="text" id="seller" placeholder="نام فروشنده">
+    <input type="text" id="description" placeholder="توضیحات">
+
+    <div class="checkbox">
+      <label for="fee_check">کارمزد</label>
+      <input type="checkbox" id="fee_check">
+    </div>
+
+    <div class="fee-section" id="fee_section">
+      <input type="text" id="fee" placeholder="مقدار کارمزد به یورو">
+    </div>
+
+    <button onclick="submitTransaction()">ثبت معامله</button>
+    <button onclick="openBuyModal()">خرید یورو با تومان</button>
+    <a href="/de/report" target="_blank"><button>گزارش تراکنش‌ها</button></a>
+  </div>
+
+  <div class="modal" id="buy_modal">
+    <h3>خرید یورو</h3>
+    <input type="text" id="toman_input" placeholder="مقدار به تومان">
+    <input type="text" id="desc_input" placeholder="توضیحات">
+    <button onclick="submitPurchase()">تأیید خرید</button>
+    <button onclick="closeBuyModal()">انصراف</button>
+  </div>
+  <div id="overlay" onclick="closeBuyModal()"></div>
+
+  <script>
+    const feeCheckbox = document.getElementById('fee_check');
+    const feeSection = document.getElementById('fee_section');
+
+    feeCheckbox.addEventListener('change', () => {
+      feeSection.style.display = feeCheckbox.checked ? 'block' : 'none';
+      document.getElementById('fee').value = "";
+    });
+
+    function uncomma(val) {
+      return (val || "").replace(/,/g, '').replace(/[^\d.-]/g, '');
+    }
+
+    async function postJson(url, payload){
+      try{
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok){
+          const text = await res.text();
+          alert(`خطا در درخواست\n${res.status} ${res.statusText}\n${text}`);
+          return null;
+        }
+        return await res.json();
+      }catch(err){
+        alert("اتصال برقرار نشد: " + err.message);
+        return null;
+      }
+    }
+
+    async function submitTransaction() {
+      const payload = {
+        type: "ثبت معامله",
+        amount: parseFloat(uncomma(document.getElementById('amount').value)) || 0,
+        euro_rate_sell: parseFloat(uncomma(document.getElementById('rate_sell').value)) || 0,
+        euro_rate_buy: parseFloat(uncomma(document.getElementById('rate_buy').value)) || 0,
+        buyer_name: document.getElementById('buyer').value.trim(),
+        seller_name: document.getElementById('seller').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        fee: feeCheckbox.checked ? (parseFloat(uncomma(document.getElementById('fee').value)) || 0) : 0,
+        toman_amount: 0,
+        profit: 0,
+        date: new Date().toISOString()
+      };
+
+      if (!payload.amount || !payload.euro_rate_sell || !payload.euro_rate_buy || !payload.buyer_name || !payload.seller_name) {
+        alert("لطفاً تمام فیلدها را پر کنید (به جز توضیحات).");
+        return;
+      }
+
+      const data = await postJson("/transactions", payload);
+      if (data){
+        alert("تراکنش با موفقیت ثبت شد");
+        ['amount','rate_sell','rate_buy','buyer','seller','description','fee'].forEach(id => document.getElementById(id).value = "");
+        feeCheckbox.checked = false;
+        feeSection.style.display = "none";
+        loadBalance();
+      }
+    }
+
+    async function submitPurchase() {
+      const toman = parseFloat(uncomma(document.getElementById('toman_input').value)) || 0;
+      const desc = document.getElementById('desc_input').value;
+
+      if (toman <= 0) {
+        alert("لطفاً مقدار معتبر وارد کنید");
+        return;
+      }
+
+      const payload = {
+        type: "خرید",
+        amount: 0,
+        euro_rate_sell: 0,
+        euro_rate_buy: 0,
+        buyer_name: "",
+        seller_name: "",
+        fee: 0,
+        description: desc || "",
+        toman_amount: -toman,
+        profit: 0,
+        date: new Date().toISOString()
+      };
+
+      const data = await postJson("/transactions", payload);
+      if (data){
+        alert("خرید با موفقیت ثبت شد");
+        closeBuyModal();
+        loadBalance();
+      }
+    }
+
+    function openBuyModal() {
+      document.getElementById("buy_modal").style.display = "block";
+      document.getElementById("overlay").style.display = "block";
+    }
+
+    function closeBuyModal() {
+      document.getElementById("buy_modal").style.display = "none";
+      document.getElementById("overlay").style.display = "none";
+      document.getElementById("toman_input").value = "";
+      document.getElementById("desc_input").value = "";
+    }
+
+    async function loadBalance() {
+      const res = await fetch("/transactions/de");
+      const data = await res.json();
+
+      let total = 0;
+      data.forEach(t => {
+        total += (t.profit || 0) + (t.toman_amount || 0);
+      });
+
+      const balanceElem = document.getElementById('balance');
+      const absVal = Math.abs(total).toLocaleString("en-US");
+
+      if (total < 0) {
+        balanceElem.innerHTML = `<span style="color:red;">موجودی : ${absVal} - تومان</span>`;
+      } else {
+        balanceElem.innerHTML = `موجودی : ${absVal} تومان`;
+      }
+    }
+
+    function applySeparator(input) {
+      input.addEventListener("input", () => {
+        let raw = (input.value || "").replace(/,/g, '');
+        let match = raw.match(/^(\d*)(\.?)(\d{0,4})/);
+        if (!match) {
+          input.value = '';
+          return;
+        }
+        const intPart = match[1], dot = match[2], decPart = match[3];
+        const formattedInt = Number(intPart || '0').toLocaleString("en-US");
+        input.value = formattedInt + (dot ? '.' + decPart : '');
+      });
+    }
+
+    ["amount","rate_sell","rate_buy","fee","toman_input"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) applySeparator(el);
+    });
+
+    const channel = new BroadcastChannel("transactions");
+    channel.onmessage = (event) => {
+      if (event.data === "refresh_balance") loadBalance();
+    };
+
+    window.onload = () => {
+      loadBalance();
+    };
+  </script>
+</body>
+</html>

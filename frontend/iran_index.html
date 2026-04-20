@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پنل ایران</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;
+      --green:#22c55e;--orange:#f59e0b;--shadow:0 18px 45px rgba(15,23,42,.12);--r:18px
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Vazirmatn",system-ui;background:var(--bg);color:var(--text);padding:16px}
+    .wrap{max-width:1200px;margin:0 auto}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:6px 0 12px}
+    h1{margin:0;font-size:18px;font-weight:900}
+    .btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:10px 14px;font-family:inherit;font-weight:900;cursor:pointer}
+    .btn.primary{background:var(--green);border-color:transparent;color:#fff}
+    .btn.orange{background:var(--orange);border-color:transparent;color:#111827}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:900px){.cards{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+    .pill{background:#f9fafb;border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--muted)}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input,select{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px;font-family:inherit}
+    .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px}
+    table{width:100%;border-collapse:collapse;background:#fff;min-width:520px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;font-size:13px;font-variant-numeric:tabular-nums}
+    th{background:#f9fafb;font-weight:900;color:#374151;position:sticky;top:0}
+    .muted{color:var(--muted);font-size:12px;line-height:1.8}
+    .toast{position:fixed;bottom:18px;right:18px;background:#111827;color:#fff;padding:12px 14px;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.25);opacity:0;transform:translateY(8px);transition:.2s ease;font-size:13px;z-index:9999}
+    .toast.show{opacity:1;transform:translateY(0)}
+    /* popup date */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:9998}
+    .overlay.show{display:flex}
+    .modal{background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(520px,92vw);padding:14px;border:1px solid var(--line)}
+    .modal h3{margin:0 0 10px;font-size:14px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    @media (max-width:520px){.grid3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>پنل ایران</h1>
+    <div class="row">
+      <button class="btn" onclick="location.href='/iran/report'">📋 گزارش</button>
+      <button class="btn" onclick="location.href='/iran/output'">➖ خروجی</button>
+      <button class="btn primary" onclick="location.href='/iran/input'">➕ ورودی</button>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="row">
+        <div class="pill">مالیات تسویه‌نشده: <b id="pendingTax">—</b> ریال</div>
+        <div class="pill">مانده کل (بانک‌های معمولی): <b id="totalBalance">—</b> ریال</div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="pill">موجودی صندوق مالیات (سامان مالیات): <b id="taxBalance">—</b> ریال</div>
+      </div>
+
+      <p class="muted" style="margin:10px 0 0">
+        تسویه مالیات = انتقال داخلی: از بانک انتخابی کم می‌شود و به <b>سامان (مالیات)</b> واریز می‌شود.
+        صندوق مالیات جداست و داخل مانده کل حساب نمی‌شود.
+      </p>
+
+      <label>بانک پرداخت‌کننده</label>
+      <select id="from_bank">
+        <option value="ملی">ملی</option>
+        <option value="صادرات">صادرات</option>
+        <option value="مسکن">مسکن</option>
+        <option value="ملت">ملت</option>
+        <option value="تجارت">تجارت</option>
+        <option value="پارسیان">پارسیان</option>
+        <option value="سامان">سامان</option>
+        <option value="کشاورزی">کشاورزی</option>
+      </select>
+
+      <label>تاریخ (شمسی) — کلیک کن پاپ‌اپ باز می‌شه (قابل تایپ هم هست)</label>
+      <input id="jdate" placeholder="1404/10/07" />
+
+      <label>توضیحات (اختیاری)</label>
+      <input id="settle_desc" placeholder="مثلاً تسویه مالیات ماه ..." />
+
+      <div class="row" style="margin-top:12px;justify-content:flex-end">
+        <button class="btn orange" id="btnSettle">تسویه مالیاتی → واریز به سامان (مالیات)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="pill">موجودی بانک‌های معمولی</div>
+        <button class="btn" id="btnRefresh">↻ بروزرسانی</button>
+      </div>
+
+      <div class="tableWrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>بانک</th><th>موجودی (ریال)</th></tr></thead>
+          <tbody id="balRows"><tr><td colspan="2" class="muted">در حال بارگذاری…</td></tr></tbody>
+          <tfoot><tr><th>جمع کل</th><th id="balTotal">—</th></tr></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="row">
+      <div class="pill">برداشت ماه جاری (شمسی): <b id="curMonth">—</b></div>
+      <button class="btn" id="btnMonth">↻ بروزرسانی برداشت ماه</button>
+    </div>
+    <div class="tableWrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>بانک</th><th>جمع برداشت این ماه (ریال)</th></tr></thead>
+        <tbody id="monthRows"><tr><td colspan="2" class="muted">در حال بارگذاری…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin:10px 0 0">فقط بانک‌های معمولی محاسبه می‌شوند (سامان مالیات جداست).</p>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- date popup -->
+<div id="overlay" class="overlay">
+  <div class="modal">
+    <h3>انتخاب تاریخ شمسی</h3>
+    <div class="grid3">
+      <select id="py"></select>
+      <select id="pm"></select>
+      <select id="pd"></select>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn" id="closePop">انصراف</button>
+      <button class="btn primary" id="okPop">تایید</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toast(msg){
+    const el=document.getElementById('toast');
+    el.textContent=msg; el.classList.add('show');
+    setTimeout(()=>el.classList.remove('show'), 2200);
+  }
+  function fmt(n){
+    try { return new Intl.NumberFormat('en-US').format(Math.round(n||0)); }
+    catch(e){ return String(n||0); }
+  }
+
+  // --- Jalali today using browser ---
+  function faDigitsToEn(s){
+    const map={'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
+    return String(s).replace(/[۰-۹]/g, ch => map[ch] || ch);
+  }
+  function todayJalali(){
+    const f = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year:'numeric',month:'2-digit',day:'2-digit'});
+    return faDigitsToEn(f.format(new Date()));
+  }
+  function currentJMonth(){
+    const f = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year:'numeric',month:'2-digit'});
+    return faDigitsToEn(f.format(new Date())); // "1404/10"
+  }
+
+  // --- popup date picker ---
+  const jdateEl = document.getElementById('jdate');
+  const overlay = document.getElementById('overlay');
+  const py = document.getElementById('py');
+  const pm = document.getElementById('pm');
+  const pd = document.getElementById('pd');
+
+  function pad2(x){ return String(x).padStart(2,'0'); }
+  function fillPopup(){
+    py.innerHTML=""; pm.innerHTML=""; pd.innerHTML="";
+    for(let y=1395;y<=1415;y++){
+      const op=document.createElement('option'); op.value=String(y); op.textContent=String(y);
+      py.appendChild(op);
+    }
+    for(let m=1;m<=12;m++){
+      const op=document.createElement('option'); op.value=String(m); op.textContent=pad2(m);
+      pm.appendChild(op);
+    }
+  }
+  function daysInJalaliMonth(m){
+    m = parseInt(m,10);
+    if(m<=6) return 31;
+    if(m<=11) return 30;
+    return 29;
+  }
+  function refillDays(){
+    const max = daysInJalaliMonth(pm.value);
+    const cur = parseInt(pd.value||"1",10);
+    pd.innerHTML="";
+    for(let d=1; d<=max; d++){
+      const op=document.createElement('option'); op.value=String(d); op.textContent=pad2(d);
+      pd.appendChild(op);
+    }
+    pd.value = String(Math.min(cur, max));
+  }
+  function parseJdate(s){
+    const m = String(s||"").trim().match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if(!m) return null;
+    return {y:m[1], m:String(parseInt(m[2],10)), d:String(parseInt(m[3],10))};
+  }
+
+  fillPopup();
+  jdateEl.value = todayJalali();
+
+  function openPop(){
+    const v = parseJdate(jdateEl.value) || parseJdate(todayJalali());
+    py.value=v?.y || "1404";
+    pm.value=v?.m || "10";
+    refillDays();
+    pd.value=v?.d || "7";
+    overlay.classList.add('show');
+  }
+  function closePop(){ overlay.classList.remove('show'); }
+
+  jdateEl.addEventListener('click', openPop);
+  pm.addEventListener('change', refillDays);
+  document.getElementById('closePop').addEventListener('click', closePop);
+  document.getElementById('okPop').addEventListener('click', ()=>{
+    jdateEl.value = `${py.value}/${pad2(pm.value)}/${pad2(pd.value)}`;
+    closePop();
+  });
+
+  async function refreshBalancesAndTax(){
+    const [p, b] = await Promise.all([
+      fetch('/iran/pending-tax').then(r=>r.json()),
+      fetch('/iran/balances').then(r=>r.json()),
+    ]);
+
+    const pending = p.pending_tax || 0;
+    document.getElementById('pendingTax').textContent = fmt(pending);
+
+    // اگر pending > 0 دکمه تسویه را برجسته کن
+    const btnSettle = document.getElementById('btnSettle');
+    btnSettle.style.opacity = pending > 0 ? '1' : '0.4';
+    btnSettle.title = pending > 0 ? `مالیات تسویه‌نشده: ${fmt(pending)} ریال` : 'مالیات تسویه‌نشده‌ای وجود ندارد';
+
+    // بانک پیشنهادی (بیشترین موجودی) را انتخاب کن
+    if(p.suggested_bank){
+      const sel = document.getElementById('from_bank');
+      for(let i=0; i<sel.options.length; i++){
+        if(sel.options[i].value === p.suggested_bank){
+          sel.selectedIndex = i;
+          break;
+        }
+      }
+    }
+
+    const balances = b.balances || {};
+    const keys = Object.keys(balances);
+    const tbody = document.getElementById('balRows');
+
+    tbody.innerHTML = keys.length
+      ? keys.map(k => `<tr><td>${k}</td><td>${fmt(balances[k])}</td></tr>`).join('')
+      : `<tr><td colspan="2" class="muted">هنوز تراکنشی ثبت نشده.</td></tr>`;
+
+    document.getElementById('balTotal').textContent = fmt(b.total || 0);
+    document.getElementById('totalBalance').textContent = fmt(b.total || 0);
+    document.getElementById('taxBalance').textContent = fmt(b.tax_bank_balance || 0);
+  }
+
+  async function refreshMonthly(){
+    const jm = currentJMonth();
+    document.getElementById('curMonth').textContent = jm;
+
+    const mw = await fetch('/iran/monthly-withdrawals?month=' + encodeURIComponent(jm)).then(r=>r.json());
+    const t = mw.totals || {};
+    const banks = Object.keys(t);
+    const mbody = document.getElementById('monthRows');
+
+    mbody.innerHTML = banks.length
+      ? banks.map(bn => `<tr><td>${bn}</td><td>${fmt(t[bn])}</td></tr>`).join('')
+      : `<tr><td colspan="2" class="muted">خروجی در ماه جاری ثبت نشده.</td></tr>`;
+  }
+
+  document.getElementById('btnRefresh').addEventListener('click', refreshBalancesAndTax);
+  document.getElementById('btnMonth').addEventListener('click', refreshMonthly);
+
+  document.getElementById('btnSettle').addEventListener('click', async ()=>{
+    const from_bank = document.getElementById('from_bank').value;
+    const description = (document.getElementById('settle_desc').value||"").trim();
+    const jdate = (document.getElementById('jdate').value||"").trim();
+
+    const res = await fetch('/iran/settle-tax', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ from_bank, jdate, description })
+    });
+
+    const j = await res.json().catch(()=>({ok:false,message:"خطای سرور"}));
+    if(!res.ok || !j.ok){
+      toast(j.message || 'تسویه انجام نشد');
+      return;
+    }
+    const settled = j.amount ? ` (${fmt(j.amount)} ریال)` : '';
+    toast('تسویه انجام شد ✅' + settled);
+    document.getElementById('settle_desc').value='';
+    await refreshBalancesAndTax();
+    await refreshMonthly();
+  });
+
+  (async ()=>{
+    await refreshBalancesAndTax();
+    await refreshMonthly();
+  })();
+</script>
+</body>
+</html>

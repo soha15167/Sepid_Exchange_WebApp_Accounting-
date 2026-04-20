@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>خروجی از حساب (ایران)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#eef2f4;--card:#fff;--text:#111827;--muted:#6b7280;--border:#e5e7eb;--shadow:0 20px 50px rgba(0,0,0,.08);--r:18px}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Vazirmatn",system-ui;background:var(--bg);color:var(--text);padding:16px}
+    .wrap{max-width:900px;margin:0 auto}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    h1{margin:0;font-size:18px;font-weight:900}
+    .btn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:700px){.grid{grid-template-columns:1fr}}
+    label{display:block;font-size:12px;color:var(--muted);margin:8px 0 6px}
+    input,select,textarea{width:100%;border:1px solid var(--border);border-radius:14px;padding:12px;font-family:inherit;font-variant-numeric:tabular-nums}
+    textarea{min-height:90px;resize:vertical}
+    .ok{background:#ef4444;color:#fff;border:0;border-radius:14px;padding:12px 14px;font-weight:900;cursor:pointer}
+    .msg{margin-top:10px;color:#111827;font-weight:800}
+    .muted{color:var(--muted);font-size:12px;line-height:1.8}
+    .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .switch{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:9998}
+    .overlay.show{display:flex}
+    .modal{background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(520px,92vw);padding:14px;border:1px solid var(--border)}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    @media (max-width:520px){.grid3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>خروجی از حساب (ایران)</h1>
+    <button class="btn" onclick="location.href='/iran'">بازگشت</button>
+  </div>
+
+  <div class="card">
+    <p class="muted" style="margin:0 0 10px">
+      خروجی بانک‌های معمولی: <b>کارمزد و مالیات اتومات</b> محاسبه می‌شود. (سامان مالیات همیشه صفر)
+    </p>
+
+    <div class="row" style="margin-bottom:10px">
+      <label class="switch">
+        <input type="checkbox" id="autoCalc" checked />
+        محاسبه اتومات کارمزد/مالیات
+      </label>
+    </div>
+
+    <div class="grid">
+      <div>
+        <label>بانک (منبع)</label>
+        <select id="bank">
+          <option value="ملی">ملی</option>
+          <option value="صادرات">صادرات</option>
+          <option value="مسکن">مسکن</option>
+          <option value="ملت">ملت</option>
+          <option value="تجارت">تجارت</option>
+          <option value="پارسیان">پارسیان</option>
+          <option value="سامان">سامان</option>
+          <option value="کشاورزی">کشاورزی</option>
+          <option value="سامان (مالیات)">سامان (مالیات)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>بانک مقصد (اختیاری)</label>
+        <input id="destBank" placeholder="مثل: سپه یا ملت" />
+      </div>
+
+      <div>
+        <label>مبلغ (ریال)</label>
+        <input id="amount" inputmode="numeric" placeholder="مثلاً 20,000,000" />
+      </div>
+
+      <div>
+        <label>نوع حواله</label>
+        <select id="transferType">
+          <option value="کارت به کارت">کارت به کارت</option>
+          <option value="شبا">شبا</option>
+          <option value="ساتنا">ساتنا</option>
+          <option value="حساب به حساب">حساب به حساب</option>
+          <option value="پایا">پایا</option>
+          <option value="نقدی">نقدی</option>
+          <option value="نامشخص">نامشخص</option>
+        </select>
+      </div>
+
+      <div>
+        <label>کارمزد</label>
+        <input id="fee" inputmode="numeric" placeholder="0" />
+      </div>
+
+      <div>
+        <label>مالیات</label>
+        <input id="tax" inputmode="numeric" placeholder="0" />
+      </div>
+
+      <div>
+        <label>تاریخ (شمسی)</label>
+        <input id="jdate" placeholder="1404/10/07" />
+      </div>
+
+      <div style="grid-column:1/-1">
+        <label>توضیحات (اختیاری)</label>
+        <textarea id="desc" placeholder="..."></textarea>
+      </div>
+
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end">
+        <button class="ok" id="save">ثبت خروجی</button>
+      </div>
+    </div>
+
+    <div id="msg" class="msg"></div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay">
+  <div class="modal">
+    <h3 style="margin:0 0 10px">انتخاب تاریخ شمسی</h3>
+    <div class="grid3">
+      <select id="py"></select>
+      <select id="pm"></select>
+      <select id="pd"></select>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" id="closePop">انصراف</button>
+      <button class="btn" style="background:#ef4444;color:#fff;border-color:transparent" id="okPop">تایید</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TAX_BANK = "سامان (مالیات)";
+  const TAX_RATE = 0.002;   // 0.2%
+  
+  // کارمزد‌های جدید بر اساس نوع حواله
+  // جدول کارمزد 1404 - بانک مرکزی
+  // کارت به کارت / شبا: تا 10M → 9000، هر 10M مازاد → +3200
+  const FEE_RULES = {
+    "کارت به کارت": {type: "tiered", base_fee: 9000, extra_fee: 3200, tier_size: 10_000_000},
+    "شبا":          {type: "tiered", base_fee: 9000, extra_fee: 3200, tier_size: 10_000_000},
+    "پایا":         {type: "percent", value: 0.0001, min: 3000, max: 75000},
+    "ساتنا":        {type: "percent", value: 0.0002, min: 0,    max: 350000},
+    "حساب به حساب": {type: "percent", value: 0.0001},
+    "نقدی":         {type: "percent", value: 0.005,  min: 2000},
+    "نامشخص":       {type: "percent", value: 0.0001},
+  };
+
+  function fmt(n){ return new Intl.NumberFormat('en-US').format(n||0); }
+  
+  function faToEn(s){
+    const map = {'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
+    return String(s).replace(/[۰-۹]/g, ch => map[ch] || ch);
+  }
+  
+  function toNum(s){
+    let cleaned = String(s||'').replace(/,/g,'').replace(/\s/g,'');
+    cleaned = faToEn(cleaned); // تبدیل اعداد فارسی به انگلیسی
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  const bankEl = document.getElementById("bank");
+  const destBankEl = document.getElementById("destBank");
+  const amountEl = document.getElementById("amount");
+  const feeEl = document.getElementById("fee");
+  const taxEl = document.getElementById("tax");
+  const transferTypeEl = document.getElementById("transferType");
+  const autoEl = document.getElementById("autoCalc");
+
+  function formatMoneyInput(el){
+    const n = toNum(el.value);
+    el.value = n ? fmt(Math.round(n)) : "";
+  }
+
+  amountEl.addEventListener("input", ()=>{
+    const n = toNum(amountEl.value);
+    amountEl.value = n ? fmt(Math.round(n)) : "";
+    calcAuto();
+  });
+  feeEl.addEventListener("input", ()=> formatMoneyInput(feeEl));
+  taxEl.addEventListener("input", ()=> formatMoneyInput(taxEl));
+  bankEl.addEventListener("change", calcAuto);
+  transferTypeEl.addEventListener("change", calcAuto);
+  autoEl.addEventListener("change", calcAuto);
+
+  function calcAuto(){
+    const bank = bankEl.value;
+    const amt = toNum(amountEl.value);
+    const transferType = transferTypeEl.value;
+
+    if(!autoEl.checked){
+      return;
+    }
+
+    // اگر مبلغ وارد نشده، کارمزد و مالیات صفر باشد
+    if(!amt || amt <= 0){
+      feeEl.value = "0";
+      taxEl.value = "0";
+      return;
+    }
+
+    if(bank === TAX_BANK){
+      feeEl.value = "0";
+      taxEl.value = "0";
+      return;
+    }
+
+    // محاسبه کارمزد براساس نوع حواله (جدول 1404)
+    let fee = 0;
+    const rule = FEE_RULES[transferType] || FEE_RULES["نامشخص"];
+
+    if(rule.type === "tiered"){
+      if(amt <= rule.tier_size){
+        fee = rule.base_fee;
+      } else {
+        const extraTiers = Math.ceil((amt - rule.tier_size) / rule.tier_size);
+        fee = rule.base_fee + extraTiers * rule.extra_fee;
+      }
+    } else if(rule.type === "fixed"){
+      fee = rule.value;
+    } else if(rule.type === "percent"){
+      fee = amt * rule.value;
+      if(rule.min !== undefined) fee = Math.max(fee, rule.min);
+      if(rule.max !== undefined) fee = Math.min(fee, rule.max);
+    }
+    
+    const tax = Math.round(amt * TAX_RATE);
+    feeEl.value = fee ? fmt(Math.round(fee)) : "0";
+    taxEl.value = tax ? fmt(tax) : "0";
+  }
+
+  function pad2(x){ return String(x).padStart(2,'0'); }
+  function faDigitsToEn(s){
+    const map={'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
+    return String(s).replace(/[۰-۹]/g, ch => map[ch] || ch);
+  }
+  function todayJalali(){
+    const f = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year:'numeric',month:'2-digit',day:'2-digit'});
+    return faDigitsToEn(f.format(new Date()));
+  }
+
+  // popup
+  const jdateEl = document.getElementById('jdate');
+  const overlay = document.getElementById('overlay');
+  const py = document.getElementById('py');
+  const pm = document.getElementById('pm');
+  const pd = document.getElementById('pd');
+
+  function fillPopup(){
+    py.innerHTML=""; pm.innerHTML=""; pd.innerHTML="";
+    for(let y=1395;y<=1415;y++){
+      const op=document.createElement('option'); op.value=String(y); op.textContent=String(y);
+      py.appendChild(op);
+    }
+    for(let m=1;m<=12;m++){
+      const op=document.createElement('option'); op.value=String(m); op.textContent=pad2(m);
+      pm.appendChild(op);
+    }
+  }
+  function daysInJalaliMonth(m){
+    m = parseInt(m,10);
+    if(m<=6) return 31;
+    if(m<=11) return 30;
+    return 29;
+  }
+  function refillDays(){
+    const max = daysInJalaliMonth(pm.value);
+    const cur = parseInt(pd.value||"1",10);
+    pd.innerHTML="";
+    for(let d=1; d<=max; d++){
+      const op=document.createElement('option'); op.value=String(d); op.textContent=pad2(d);
+      pd.appendChild(op);
+    }
+    pd.value = String(Math.min(cur, max));
+  }
+  function parseJdate(s){
+    const m = String(s||"").trim().match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if(!m) return null;
+    return {y:m[1], m:String(parseInt(m[2],10)), d:String(parseInt(m[3],10))};
+  }
+  function openPop(){
+    const v = parseJdate(jdateEl.value) || parseJdate(todayJalali());
+    py.value = v?.y || "1404";
+    pm.value = v?.m || "10";
+    refillDays();
+    pd.value = v?.d || "7";
+    overlay.classList.add('show');
+  }
+  function closePop(){ overlay.classList.remove('show'); }
+
+  fillPopup();
+  jdateEl.value = todayJalali();
+  jdateEl.addEventListener('click', openPop);
+  pm.addEventListener('change', refillDays);
+  document.getElementById('closePop').addEventListener('click', closePop);
+  document.getElementById('okPop').addEventListener('click', ()=>{
+    jdateEl.value = `${py.value}/${pad2(pm.value)}/${pad2(pd.value)}`;
+    closePop();
+  });
+
+  // init
+  calcAuto();
+
+  document.getElementById("save").addEventListener("click", async ()=>{
+    const bank = bankEl.value;
+    const destBank = (destBankEl.value||"").trim();
+    const amount = toNum(amountEl.value);
+    const fee = toNum(feeEl.value);
+    const tax = toNum(taxEl.value);
+    const transferType = transferTypeEl.value;
+    const desc = (document.getElementById("desc").value||"").trim();
+    const jdate = (document.getElementById("jdate").value||"").trim();
+
+    if(!bank || !amount){
+      document.getElementById("msg").textContent = "بانک و مبلغ را کامل وارد کنید.";
+      return;
+    }
+
+    const payload = {
+      type: "ایران",
+      iran_type: "خروجی",
+      bank_name: bank,
+      destination_bank: destBank,
+      iran_amount: amount,
+      depositor_name: "",
+      transfer_type: transferType,
+      deposit_fee: fee,
+      tax: tax,
+      description: desc,
+      jdate: jdate
+    };
+
+    const r = await fetch("/transactions", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+
+    if(!r.ok){
+      document.getElementById("msg").textContent = "خطا در ثبت (سرور).";
+      return;
+    }
+    document.getElementById("msg").textContent = "ثبت شد ✅";
+    amountEl.value="";
+    destBankEl.value="";
+    feeEl.value="0";
+    taxEl.value="0";
+    document.getElementById("desc").value="";
+    transferTypeEl.value="کارت به کارت";
+    calcAuto();
+  });
+</script>
+</body>
+</html>

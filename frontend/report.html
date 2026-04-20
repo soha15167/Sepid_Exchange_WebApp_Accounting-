@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>گزارش تراکنش‌ها</title>
+  <link href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003-FD/font-face.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: Vazirmatn, sans-serif;
+      background-color: #f9f9f9;
+      padding: 16px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 22px;
+    }
+
+    .card {
+      background-color: white;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+      margin-bottom: 20px;
+    }
+
+    .field-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .field-row label {
+      width: 100px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .field-row input {
+      flex: 1;
+      min-width: 120px;
+      padding: 6px 10px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      text-align: center;
+      box-sizing: border-box;
+    }
+
+    .field-row textarea {
+      flex: 1;
+      min-width: 120px;
+      padding: 6px 10px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      resize: vertical;
+      box-sizing: border-box;
+      line-height: 1.4;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .edit-btn {
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .delete-btn {
+      background-color: #f44336;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    @media (min-width: 768px) {
+      .field-row {
+        flex-wrap: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h2>گزارش تراکنش‌های آلمان</h2>
+  <div id="report_container"></div>
+
+  <script>
+    const channel = new BroadcastChannel("transactions");
+
+    function formatNumber(val) {
+      return Number(val || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+    }
+
+    function parseNumber(val) {
+      const cleaned = String(val || '').replace(/,/g, '').replace(/[^\d.-]/g, '');
+      return parseFloat(cleaned) || 0;
+    }
+
+    function dateValue(val) {
+      if (!val) return "";
+      return String(val).slice(0, 10);
+    }
+
+    function formatInputFields(id) {
+      const fields = ["amount", "sell", "buy", "fee", "toman"];
+      fields.forEach(field => {
+        const input = document.getElementById(`${field}-${id}`);
+        if (!input) return;
+
+        input.addEventListener("input", () => {
+          const raw = input.value.replace(/,/g, '').replace(/[^\d.-]/g, '');
+          if (!isNaN(raw) && raw !== "") {
+            input.value = Number(raw).toLocaleString("en-US", { maximumFractionDigits: 2 });
+          }
+        });
+      });
+    }
+
+    async function fetchTransactions() {
+      const res = await fetch("/transactions/de");
+      const data = await res.json();
+      const container = document.getElementById("report_container");
+      container.innerHTML = "";
+
+      data.forEach((t, index) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="field-row"><label>شماره</label><input value="${index + 1}" disabled></div>
+          <div class="field-row"><label>تاریخ</label><input type="date" value="${dateValue(t.date)}" id="date-${t.id}"></div>
+          <div class="field-row"><label>نوع</label><input value="${t.type || ''}" id="type-${t.id}"></div>
+          <div class="field-row"><label>مقدار (€)</label><input value="${formatNumber(t.amount)}" id="amount-${t.id}"></div>
+          <div class="field-row"><label>نرخ فروش</label><input value="${formatNumber(t.euro_rate_sell)}" id="sell-${t.id}"></div>
+          <div class="field-row"><label>نرخ خرید</label><input value="${formatNumber(t.euro_rate_buy)}" id="buy-${t.id}"></div>
+          <div class="field-row"><label>کارمزد</label><input value="${formatNumber(t.fee)}" id="fee-${t.id}"></div>
+          <div class="field-row"><label>به تومان</label><input value="${formatNumber(t.toman_amount)}" id="toman-${t.id}"></div>
+          <div class="field-row"><label>سود</label><input value="${formatNumber(t.profit)}" id="profit-${t.id}" disabled></div>
+          <div class="field-row"><label>خریدار</label><input value="${t.buyer_name || ''}" id="buyer-${t.id}"></div>
+          <div class="field-row"><label>فروشنده</label><input value="${t.seller_name || ''}" id="seller-${t.id}"></div>
+          <div class="field-row"><label>توضیحات</label><textarea rows="2" id="desc-${t.id}">${t.description || ''}</textarea></div>
+          <div class="actions">
+            <button class="edit-btn" onclick="updateTransaction(${t.id})">ویرایش</button>
+            <button class="delete-btn" onclick="deleteTransaction(${t.id})">❌</button>
+          </div>
+        `;
+        container.appendChild(card);
+        formatInputFields(t.id);
+      });
+    }
+
+    async function updateTransaction(id) {
+      const payload = {
+        date: document.getElementById(`date-${id}`).value || null,
+        type: document.getElementById(`type-${id}`).value || "ثبت معامله",
+        amount: parseNumber(document.getElementById(`amount-${id}`).value),
+        euro_rate_sell: parseNumber(document.getElementById(`sell-${id}`).value),
+        euro_rate_buy: parseNumber(document.getElementById(`buy-${id}`).value),
+        fee: parseNumber(document.getElementById(`fee-${id}`).value),
+        toman_amount: parseNumber(document.getElementById(`toman-${id}`).value),
+        buyer_name: document.getElementById(`buyer-${id}`).value || "",
+        seller_name: document.getElementById(`seller-${id}`).value || "",
+        description: document.getElementById(`desc-${id}`).value || ""
+      };
+
+      const res = await fetch(`/transactions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        fetchTransactions();
+        channel.postMessage("refresh_balance");
+      } else {
+        alert("خطا در ویرایش");
+      }
+    }
+
+    async function deleteTransaction(id) {
+      if (!confirm("آیا مطمئن هستید؟")) return;
+
+      const res = await fetch(`/transactions/${id}`, {
+        method: "DELETE"
+      });
+
+      if (res.ok) {
+        fetchTransactions();
+        channel.postMessage("refresh_balance");
+      } else {
+        alert("خطا در حذف");
+      }
+    }
+
+    fetchTransactions();
+  </script>
+</body>
+</html>

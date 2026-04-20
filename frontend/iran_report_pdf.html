@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>گزارش ماهانه ایران - {{ jy }}/{{ "%02d"|format(jm) }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 20mm;
+    }
+    body{
+      font-family: "Vazirmatn", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11px;
+      color:#111827;
+      direction: rtl;
+    }
+    h1{
+      font-size: 16px;
+      margin: 0 0 4px;
+    }
+    h2{
+      font-size: 13px;
+      margin: 0 0 8px;
+    }
+    .meta{
+      font-size: 9px;
+      color:#6b7280;
+      margin-bottom: 10px;
+    }
+    table{
+      width:100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+    }
+    th, td{
+      border:1px solid #d1d5db;
+      padding:4px 3px;
+      text-align:right;
+      vertical-align: top;
+    }
+    thead th{
+      background:#f3f4f6;
+      font-weight:600;
+      font-size:10px;
+      white-space:nowrap;
+    }
+    tbody tr:nth-child(even){
+      background:#f9fafb;
+    }
+    .num{
+      text-align:left;
+      direction:ltr;
+      font-family: "Courier New", monospace;
+      font-size:10px;
+    }
+    .small{
+      font-size:9px;
+      color:#6b7280;
+    }
+    .badge{
+      display:inline-block;
+      padding:2px 6px;
+      border-radius:999px;
+      font-size:9px;
+    }
+    .badge-in{
+      background:#dcfce7;
+      color:#166534;
+    }
+    .badge-out{
+      background:#fee2e2;
+      color:#991b1b;
+    }
+    .section{
+      margin-top:14px;
+    }
+    .bank-table th, .bank-table td{
+      font-size:9px;
+    }
+  </style>
+</head>
+<body>
+  <h1>گزارش تراکنش‌های ایران</h1>
+  <div class="meta">
+    ماه شمسی: {{ jy }} / {{ "%02d"|format(jm) }}<br>
+    زمان تولید گزارش: {{ generated_at }}
+  </div>
+
+  <h2>۱) لیست تراکنش‌ها</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>تاریخ (شمسی)</th>
+        <th>نوع</th>
+        <th>بانک مبدأ</th>
+        <th>بانک مقصد</th>
+        <th>نام طرف مقابل</th>
+        <th>نوع انتقال</th>
+        <th>مبلغ (تومان)</th>
+        <th>کارمزد</th>
+        <th>مالیات</th>
+        <th>توضیحات</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td class="num">{{ loop.index }}</td>
+        <td>{{ r.date_jalali }}</td>
+        <td>
+          {% if r.iran_type == "ورودی" %}
+            <span class="badge badge-in">ورودی</span>
+          {% elif r.iran_type == "خروجی" %}
+            <span class="badge badge-out">خروجی</span>
+          {% else %}
+            {{ r.iran_type }}
+          {% endif %}
+        </td>
+        <td>{{ r.bank_name }}</td>
+        <td>{{ r.dest_bank_name }}</td>
+        <td>{{ r.depositor_name }}</td>
+        <td>{{ r.transfer_type }}</td>
+        <td class="num">{{ "{:,}".format(r.iran_amount) }}</td>
+        <td class="num small">{{ "{:,}".format(r.deposit_fee) }}</td>
+        <td class="num small">{{ "{:,}".format(r.tax) }}</td>
+        <td class="small">{{ r.description }}</td>
+      </tr>
+    {% endfor %}
+    {% if rows|length == 0 %}
+      <tr>
+        <td colspan="11" class="small">در این ماه تراکنشی ثبت نشده است.</td>
+      </tr>
+    {% endif %}
+    </tbody>
+  </table>
+
+  <div class="section">
+    <h2>۲) خلاصه ماهانه بانک‌ها</h2>
+    <table class="bank-table">
+      <thead>
+        <tr>
+          <th>بانک</th>
+          <th>ورودی ماه</th>
+          <th>خروجی ماه</th>
+          <th>مانده اول دوره</th>
+          <th>خالص ماه</th>
+          <th>مانده پایان دوره</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for bank, info in summary.closing.items() %}
+        <tr>
+          <td>{{ bank }}</td>
+          <td class="num">{{ "{:,}".format(info.in) }}</td>
+          <td class="num">{{ "{:,}".format(info.out) }}</td>
+          <td class="num">{{ "{:,}".format(info.net_opening) }}</td>
+          <td class="num">{{ "{:,}".format(info.net_month) }}</td>
+          <td class="num">{{ "{:,}".format(info.net_closing) }}</td>
+        </tr>
+      {% endfor %}
+      {% if summary.closing|length == 0 %}
+        <tr>
+          <td colspan="6" class="small">هیچ تراکنشی برای این ماه ثبت نشده است.</td>
+        </tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>گزارش تراکنش‌های ایران</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--shadow:0 18px 45px rgba(15,23,42,.12);--r:18px}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Vazirmatn",system-ui;background:var(--bg);color:var(--text);padding:16px}
+    .wrap{max-width:1400px;margin:0 auto}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    h1{margin:0;font-size:18px;font-weight:900}
+    .btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:10px 14px;font-family:inherit;font-weight:900;cursor:pointer}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
+    .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .pill{background:#f9fafb;border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--muted)}
+    .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:16px}
+    table{width:100%;border-collapse:collapse;background:#fff;table-layout:auto}
+    th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+    th{background:#f9fafb;font-weight:900;color:#374151;position:sticky;top:0;z-index:1}
+    td input, td select{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:inherit;width:100%;font-size:12px;box-sizing:border-box}
+    td:nth-child(1){width:40px}
+    td:nth-child(2){width:90px}
+    td:nth-child(3),td:nth-child(4){width:100px}
+    td:nth-child(5){width:110px}
+    td:nth-child(6){width:110px}
+    td:nth-child(7){width:120px}
+    td:nth-child(8),td:nth-child(9){width:95px}
+    td:nth-child(10){width:105px}
+    td:nth-child(11){width:160px}
+    td:nth-child(12){width:120px}
+    .muted{color:var(--muted);font-size:12px;line-height:1.8}
+    .danger{background:#ef4444;color:#fff;border:0;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
+    .ok{background:#22c55e;color:#fff;border:0;border-radius:999px;padding:8px 12px;font-weight:900;cursor:pointer}
+    .disabled{opacity:.45;pointer-events:none}
+    @media (max-width:900px){
+      table{min-width:1050px}
+      th,td{font-size:12px}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>گزارش تراکنش‌های ایران</h1>
+    <div class="row">
+      <button class="btn" onclick="location.href='/iran'">بازگشت</button>
+      <button class="btn" id="refresh">↻ بروزرسانی</button>
+      <span class="pill">ردیف‌های تسویه مالیات سیستمی هستند و از این صفحه قابل ویرایش نیستند.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ردیف</th>
+            <th>نوع</th>
+            <th>بانک (منبع)</th>
+            <th>بانک مقصد</th>
+            <th>نوع حواله</th>
+            <th>واریز/برداشت کننده</th>
+            <th>مبلغ (ریال)</th>
+            <th>کارمزد</th>
+            <th>مالیات</th>
+            <th>تاریخ (شمسی)</th>
+            <th>توضیحات</th>
+            <th>عملیات</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="12" class="muted">در حال بارگذاری…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="muted" style="margin:10px 0 0">
+      ردیف‌های “تسویه مالیات” همیشه کارمزد/مالیات صفر هستند و tag داخلی آن‌ها در سیستم حفظ می‌شود.
+    </p>
+  </div>
+</div>
+
+<script>
+  function fmt(n){
+    return new Intl.NumberFormat('en-US').format(Math.round(n || 0));
+  }
+
+  function faDigitsToEn(s){
+    const map = {'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
+    return String(s).replace(/[۰-۹]/g, ch => map[ch] || ch);
+  }
+
+  function toNum(s){
+    const cleaned = faDigitsToEn(String(s || '').replace(/,/g,'').replace(/\s/g,''));
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function toJalaliFromISO(iso){
+    try{
+      const d = new Date(iso);
+      const f = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year:'numeric',month:'2-digit',day:'2-digit'});
+      return faDigitsToEn(f.format(d));
+    }catch(e){
+      return "";
+    }
+  }
+
+  function moneyInput(el){
+    const n = toNum(el.value);
+    el.value = n ? fmt(n) : "";
+  }
+
+  function esc(v){
+    return String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  async function load(){
+    const data = await fetch("/transactions/iran").then(r => r.json());
+    const tbody = document.getElementById("rows");
+
+    if(!Array.isArray(data) || !data.length){
+      tbody.innerHTML = `<tr><td colspan="12" class="muted">تراکنشی وجود ندارد.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.map((t, i) => {
+      const jdate = (t.jdate && String(t.jdate).trim()) ? t.jdate : (t.date ? toJalaliFromISO(t.date) : "");
+      const bank = t.bank_name || "";
+      const destBank = t.destination_bank || "";
+      const iranType = t.iran_type || "";
+      const rawTransferType = t.transfer_type || "";
+      const isSettle = rawTransferType.startsWith("SETTLE_TAX|");
+      const displayTType = isSettle ? "تسویه مالیات" : rawTransferType;
+
+      return `
+        <tr data-id="${t.id}" data-raw-ttype="${esc(rawTransferType)}" style="${isSettle ? 'background:#fffbeb;' : ''}">
+          <td>${i + 1}</td>
+          <td>
+            <select class="type" ${isSettle ? "disabled" : ""}>
+              <option value="ورودی" ${iranType === "ورودی" ? "selected" : ""}>ورودی</option>
+              <option value="خروجی" ${iranType === "خروجی" ? "selected" : ""}>خروجی</option>
+              <option value="تسویه مالیات" ${iranType === "تسویه مالیات" ? "selected" : ""}>تسویه مالیات</option>
+            </select>
+          </td>
+          <td><input class="bank" value="${esc(bank)}" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="destbank" value="${esc(destBank)}" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="ttype" value="${esc(displayTType)}" readonly /></td>
+          <td><input class="name" value="${esc(t.depositor_name || "")}" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="amt" value="${t.iran_amount ? fmt(t.iran_amount) : ""}" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="fee" value="${t.deposit_fee ? fmt(t.deposit_fee) : "0"}" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="tax" value="${t.tax ? fmt(t.tax) : "0"}" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="jdate" value="${esc(jdate || "")}" placeholder="1404/10/07" ${isSettle ? "readonly" : ""} /></td>
+          <td><input class="desc" value="${esc(t.description || "")}" ${isSettle ? "readonly" : ""} /></td>
+          <td>
+            <button class="ok save ${isSettle ? "disabled" : ""}">ذخیره</button>
+            <button class="danger del ${isSettle ? "disabled" : ""}">حذف</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    tbody.querySelectorAll(".amt,.fee,.tax").forEach(el => {
+      if (!el.hasAttribute("readonly")) {
+        el.addEventListener("input", () => moneyInput(el));
+      }
+    });
+
+    tbody.querySelectorAll("tr").forEach(tr => {
+      const id = tr.getAttribute("data-id");
+      const rawTransferType = tr.getAttribute("data-raw-ttype") || "";
+      const isSettle = rawTransferType.startsWith("SETTLE_TAX|");
+
+      const saveBtn = tr.querySelector(".save");
+      const delBtn = tr.querySelector(".del");
+
+      if (!isSettle) {
+        saveBtn.addEventListener("click", async () => {
+          const payload = {
+            type: "ایران",
+            iran_type: tr.querySelector(".type").value,
+            bank_name: tr.querySelector(".bank").value.trim(),
+            destination_bank: tr.querySelector(".destbank").value.trim(),
+            transfer_type: rawTransferType || tr.querySelector(".ttype").value.trim(),
+            depositor_name: tr.querySelector(".name").value.trim(),
+            iran_amount: toNum(tr.querySelector(".amt").value),
+            deposit_fee: toNum(tr.querySelector(".fee").value),
+            tax: toNum(tr.querySelector(".tax").value),
+            jdate: tr.querySelector(".jdate").value.trim(),
+            description: tr.querySelector(".desc").value.trim()
+          };
+
+          const r = await fetch("/transactions/" + id, {
+            method: "PUT",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify(payload)
+          });
+
+          if(!r.ok){
+            alert("خطا در ذخیره");
+            return;
+          }
+
+          alert("ذخیره شد ✅");
+          await load();
+        });
+
+        delBtn.addEventListener("click", async () => {
+          if(!confirm("حذف شود؟")) return;
+
+          const r = await fetch("/transactions/" + id, {method:"DELETE"});
+          if(!r.ok){
+            alert("خطا در حذف");
+            return;
+          }
+
+          await load();
+        });
+      }
+    });
+  }
+
+  document.getElementById("refresh").addEventListener("click", load);
+  load();
+</script>
+</body>
+</html>
