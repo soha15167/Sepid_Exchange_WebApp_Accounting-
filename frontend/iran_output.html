@@ -57,6 +57,11 @@
       </div>
 
       <div>
+        <label>نام برداشت‌کننده (صاحب حساب)</label>
+        <input id="name" placeholder="مثلاً: علی نصیری" />
+      </div>
+
+      <div>
         <label>نوع حواله</label>
         <select id="transferType">
           <option value="کارت به کارت">کارت به کارت</option>
@@ -81,7 +86,7 @@
 
       <div>
         <label>تاریخ (شمسی)</label>
-        <input id="jdate" placeholder="1404/10/07" />
+        <input id="jdate" placeholder="1404/10/07" inputmode="numeric" />
       </div>
 
       <div style="grid-column:1/-1">
@@ -95,21 +100,6 @@
     </div>
 
     <div id="msg" class="msg"></div>
-  </div>
-</div>
-
-<div id="overlay" class="overlay">
-  <div class="modal">
-    <h3 style="margin:0 0 10px">انتخاب تاریخ شمسی</h3>
-    <div class="grid3">
-      <select id="py"></select>
-      <select id="pm"></select>
-      <select id="pd"></select>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
-      <button class="btn" id="closePop">انصراف</button>
-      <button class="btn" style="background:#ef4444;color:#fff;border-color:transparent" id="okPop">تایید</button>
-    </div>
   </div>
 </div>
 
@@ -147,6 +137,7 @@
   const bankEl = document.getElementById("bank");
   const destBankEl = document.getElementById("destBank");
   const amountEl = document.getElementById("amount");
+  const nameEl = document.getElementById("name");
   const feeEl = document.getElementById("fee");
   const taxEl = document.getElementById("tax");
   const transferTypeEl = document.getElementById("transferType");
@@ -214,7 +205,6 @@
     taxEl.value = tax ? fmt(tax) : "0";
   }
 
-  function pad2(x){ return String(x).padStart(2,'0'); }
   function faDigitsToEn(s){
     const map={'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
     return String(s).replace(/[۰-۹]/g, ch => map[ch] || ch);
@@ -224,64 +214,8 @@
     return faDigitsToEn(f.format(new Date()));
   }
 
-  // popup
-  const jdateEl = document.getElementById('jdate');
-  const overlay = document.getElementById('overlay');
-  const py = document.getElementById('py');
-  const pm = document.getElementById('pm');
-  const pd = document.getElementById('pd');
-
-  function fillPopup(){
-    py.innerHTML=""; pm.innerHTML=""; pd.innerHTML="";
-    for(let y=1395;y<=1415;y++){
-      const op=document.createElement('option'); op.value=String(y); op.textContent=String(y);
-      py.appendChild(op);
-    }
-    for(let m=1;m<=12;m++){
-      const op=document.createElement('option'); op.value=String(m); op.textContent=pad2(m);
-      pm.appendChild(op);
-    }
-  }
-  function daysInJalaliMonth(m){
-    m = parseInt(m,10);
-    if(m<=6) return 31;
-    if(m<=11) return 30;
-    return 29;
-  }
-  function refillDays(){
-    const max = daysInJalaliMonth(pm.value);
-    const cur = parseInt(pd.value||"1",10);
-    pd.innerHTML="";
-    for(let d=1; d<=max; d++){
-      const op=document.createElement('option'); op.value=String(d); op.textContent=pad2(d);
-      pd.appendChild(op);
-    }
-    pd.value = String(Math.min(cur, max));
-  }
-  function parseJdate(s){
-    const m = String(s||"").trim().match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-    if(!m) return null;
-    return {y:m[1], m:String(parseInt(m[2],10)), d:String(parseInt(m[3],10))};
-  }
-  function openPop(){
-    const v = parseJdate(jdateEl.value) || parseJdate(todayJalali());
-    py.value = v?.y || "1404";
-    pm.value = v?.m || "10";
-    refillDays();
-    pd.value = v?.d || "7";
-    overlay.classList.add('show');
-  }
-  function closePop(){ overlay.classList.remove('show'); }
-
-  fillPopup();
-  jdateEl.value = todayJalali();
-  jdateEl.addEventListener('click', openPop);
-  pm.addEventListener('change', refillDays);
-  document.getElementById('closePop').addEventListener('click', closePop);
-  document.getElementById('okPop').addEventListener('click', ()=>{
-    jdateEl.value = `${py.value}/${pad2(pm.value)}/${pad2(pd.value)}`;
-    closePop();
-  });
+  // تاریخ پیش‌فرض امروز (قابل ویرایش دستی)
+  document.getElementById('jdate').value = todayJalali();
 
   // init
   calcAuto();
@@ -293,6 +227,7 @@
     const fee = toNum(feeEl.value);
     const tax = toNum(taxEl.value);
     const transferType = transferTypeEl.value;
+    const name = (nameEl.value||"").trim();
     const desc = (document.getElementById("desc").value||"").trim();
     const jdate = (document.getElementById("jdate").value||"").trim();
 
@@ -307,7 +242,7 @@
       bank_name: bank,
       destination_bank: destBank,
       iran_amount: amount,
-      depositor_name: "",
+      depositor_name: name,
       transfer_type: transferType,
       deposit_fee: fee,
       tax: tax,
@@ -327,6 +262,7 @@
     }
     document.getElementById("msg").textContent = "ثبت شد ✅";
     amountEl.value="";
+    nameEl.value="";
     destBankEl.value="";
     feeEl.value="0";
     taxEl.value="0";

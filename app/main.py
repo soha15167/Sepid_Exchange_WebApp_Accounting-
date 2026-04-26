@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -107,6 +107,18 @@ def iran_report_page(request: Request):
     if templates is None:
         return HTMLResponse("<h1>Error: Templates not loaded</h1>")
     return templates.TemplateResponse("iran_report.html", {"request": request})
+
+
+@app.get("/iran/monthly-reports", response_class=HTMLResponse)
+def iran_monthly_reports_page(request: Request):
+    """
+    Serve monthly reports UI with no-cache headers (avoid stale JS/CSS in browsers).
+    """
+    if templates is None:
+        return HTMLResponse("<h1>Error: Templates not loaded</h1>")
+    resp = templates.TemplateResponse("monthly_reports.html", {"request": request})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.get("/iran/input", response_class=HTMLResponse)
@@ -232,6 +244,14 @@ def iran_settle_tax(payload: SettleTaxPayload, db: Session = Depends(get_db)):
     return {"ok": True, **res, "tax_bank": "سامان (مالیات)"}
 
 
+@app.post("/iran/cleanup-legacy-settles")
+def iran_cleanup_legacy_settles(db: Session = Depends(get_db)):
+    """
+    حذف ردیف‌های قدیمی تسویه (SETTLE_TAX/SETTLE_RUN) برای یک‌دست شدن گزارش‌ها.
+    """
+    return {"ok": True, **crud.cleanup_legacy_settlements(db)}
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -248,7 +268,12 @@ def api_reports_index(db: Session = Depends(get_db)):
 
 
 @app.get("/reports/{region}/{month}")
-def api_get_report(region: str, month: str, db: Session = Depends(get_db)):
+def api_get_report(
+    region: str,
+    month: str,
+    download: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
     if region not in ("iran", "de"):
         raise HTTPException(status_code=400, detail="Invalid region")
     p = reports.report_path(region, month)  # type: ignore[arg-type]
@@ -261,10 +286,14 @@ def api_get_report(region: str, month: str, db: Session = Depends(get_db)):
     if not p.exists():
         raise HTTPException(status_code=404, detail="Report not found")
     # inline باعث می‌شود داخل مرورگر/iframe نمایش داده شود (نه دانلود اجباری)
+    disp = "attachment" if download else "inline"
     return FileResponse(
         str(p),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{p.name}"'},
+        headers={
+            "Content-Disposition": f'{disp}; filename="{p.name}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

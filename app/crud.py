@@ -84,6 +84,9 @@ def _not_settle_filter():
     return or_(
         models.Transaction.transfer_type.is_(None),
         ~models.Transaction.transfer_type.like("SETTLE_TAX|%"),
+        ~models.Transaction.transfer_type.like("SETTLE_TAX_LOCK|%"),
+        ~models.Transaction.transfer_type.like("SETTLE_BATCH|%"),
+        ~models.Transaction.transfer_type.like("SETTLE_RUN|%"),
     )
 
 
@@ -122,7 +125,7 @@ def _safe_jdate(jdate: Optional[str]) -> Optional[str]:
 
 def _is_settle_transfer_type(transfer_type: Optional[str]) -> bool:
     tt = str(transfer_type or "").strip()
-    return tt.startswith("SETTLE_TAX|") or tt.startswith("SETTLE_TAX_LOCK|")
+    return tt.startswith("SETTLE_TAX|") or tt.startswith("SETTLE_TAX_LOCK|") or tt.startswith("SETTLE_BATCH|")
 
 
 def _is_settle_locked(transfer_type: Optional[str]) -> bool:
@@ -135,6 +138,180 @@ def _settle_tag(jdate: str, tx_id: int | str) -> str:
 
 def _settle_lock_tag(jdate: str, tx_id: int | str) -> str:
     return f"SETTLE_TAX_LOCK|{jdate}|{tx_id}"
+
+
+def _settle_run_tag(jdate_end: str, tx_id: int | str) -> str:
+    return f"SETTLE_RUN|{jdate_end}|{tx_id}"
+
+
+def _settle_run_transactions_for_date(db: Session, jdate_end: str) -> List[models.Transaction]:
+    jd = _safe_jdate(jdate_end)
+    if not jd:
+        return []
+    return (
+        db.query(models.Transaction)
+        .filter(
+            _iran_filter(),
+            models.Transaction.jdate == jd,
+            models.Transaction.transfer_type.like("SETTLE_RUN|%"),
+        )
+        .order_by(models.Transaction.id.asc())
+        .all()
+    )
+
+
+def _settle_run_transactions_for_end_date(db: Session, end_date: str) -> List[models.Transaction]:
+    """
+    ردیف‌های سیستم برای «ثبت عملیات تسویه تا تاریخ X» را پیدا می‌کند،
+    حتی اگر jdate آن‌ها (تاریخ اجرا) متفاوت باشد.
+    """
+    jd_end = _safe_jdate(end_date)
+    if not jd_end:
+        return []
+    needle = f"ثبت عملیات تسویه تا تاریخ {jd_end}"
+    return (
+        db.query(models.Transaction)
+        .filter(
+            _iran_filter(),
+            models.Transaction.transfer_type.like("SETTLE_RUN|%"),
+            models.Transaction.description == needle,
+        )
+        .order_by(models.Transaction.id.asc())
+        .all()
+    )
+
+
+def _settle_batch_tag(prev_end_exclusive: str, end_inclusive: str, tx_id: int | str) -> str:
+    return f"SETTLE_BATCH|{prev_end_exclusive}|{end_inclusive}|{tx_id}"
+
+
+def _settle_batch_transactions(db: Session) -> List[models.Transaction]:
+    return (
+        db.query(models.Transaction)
+        .filter(_iran_filter(), models.Transaction.transfer_type.like("SETTLE_BATCH|%"))
+        .order_by(models.Transaction.id.asc())
+        .all()
+    )
+
+
+def _parse_settle_batch_tag(tt: Optional[str]) -> Optional[Dict[str, str]]:
+    s = str(tt or "").strip()
+    if not s.startswith("SETTLE_BATCH|"):
+        return None
+    parts = s.split("|")
+    # SETTLE_BATCH|prev|end|id
+    if len(parts) < 4:
+        return None
+    return {"prev": parts[1], "end": parts[2], "id": parts[3]}
+
+
+def _required_tax_for_range(db: Session, prev_end_exclusive: str, end_inclusive: str) -> float:
+    """
+    مالیات لازم برای بازه (prev_end, end] بر اساس خروجی‌های واقعی.
+    مبنا = جمع فیلد `tax` همان خروجی‌ها (نه محاسبه مجدد از مبلغ)،
+    تا اگر tax به هر دلیل تغییر کند، تسویه هم دقیقاً مطابق آن باشد.
+    """
+    prev = _safe_jdate(prev_end_exclusive) or "0000/00/00"
+    end = _safe_jdate(end_inclusive)
+    if not end:
+        return 0.0
+
+    items = (
+        db.query(models.Transaction)
+        .filter(
+            _iran_filter(),
+            models.Transaction.iran_type == "خروجی",
+            models.Transaction.bank_name != TAX_BANK,
+            _not_settle_filter(),
+            models.Transaction.jdate.is_not(None),
+            models.Transaction.jdate > prev,
+            models.Transaction.jdate <= end,
+        )
+        .all()
+    )
+    total = 0
+    for t in items:
+        total += int(round(float(t.tax or 0)))
+    return float(total)
+
+
+def reconcile_settle_batches(db: Session) -> None:
+    """
+    تمام تسویه‌های Batch را به ترتیب end_date دوباره محاسبه می‌کند،
+    تا اگر تراکنشی در بازه‌های قبلی تغییر کند، مبالغ بعدی هم درست شود.
+    """
+    batches = _settle_batch_transactions(db)
+    if not batches:
+        return
+
+    # مرتب‌سازی بر اساس end_date از داخل tag (نه id)
+    def end_key(t: models.Transaction) -> str:
+        info = _parse_settle_batch_tag(t.transfer_type) or {}
+        return _safe_jdate(info.get("end")) or (t.jdate or "")
+
+    batches = sorted(batches, key=end_key)
+
+    prev_end = "0000/00/00"
+    for tx in batches:
+        info = _parse_settle_batch_tag(tx.transfer_type) or {}
+        end = _safe_jdate(info.get("end")) or _safe_jdate(tx.jdate) or None
+        if not end:
+            continue
+
+        required = _required_tax_for_range(db, prev_end, end)
+
+        # مبلغ تسویه batch (قابل ویرایش دستی نیست)
+        tx.type = "ایران"
+        tx.iran_type = "خروجی"
+        tx.destination_bank = TAX_BANK
+        tx.depositor_name = "تسویه مالیات"
+        tx.deposit_fee = 0
+        tx.tax = 0
+        tx.iran_amount = required
+        tx.jdate = end
+        tx.transfer_type = _settle_batch_tag(prev_end, end, tx.id)
+
+        if not (tx.description or "").strip():
+            tx.description = f"تسویه مالیات (بازه) → {TAX_BANK}"
+
+        prev_end = end
+
+    db.commit()
+
+
+def cleanup_legacy_settlements(db: Session) -> Dict[str, int]:
+    """
+    پاکسازی ردیف‌های قدیمی تسویه (روزانه/ثبت عملیات) که قبل از منطق Batch ساخته شده‌اند.
+    فقط این‌ها حذف می‌شوند:
+    - SETTLE_TAX|...
+    - SETTLE_TAX_LOCK|...
+    - SETTLE_RUN|...
+    """
+    legacy = (
+        db.query(models.Transaction)
+        .filter(
+            _iran_filter(),
+            or_(
+                models.Transaction.transfer_type.like("SETTLE_TAX|%"),
+                models.Transaction.transfer_type.like("SETTLE_TAX_LOCK|%"),
+                models.Transaction.transfer_type.like("SETTLE_RUN|%"),
+            ),
+        )
+        .all()
+    )
+    n = 0
+    for t in legacy:
+        db.delete(t)
+        n += 1
+    db.commit()
+
+    # بعد از حذف، batch ها دوباره محاسبه شوند
+    try:
+        reconcile_settle_batches(db)
+    except Exception:
+        pass
+
+    return {"deleted": n}
 
 
 def _compute_fee(amount: float, transfer_type: str) -> float:
@@ -215,11 +392,16 @@ def _apply_auto_fee_tax_if_needed(data: dict) -> None:
 
 
 def get_iran_transactions(db: Session) -> List[models.Transaction]:
-    # جدیدترین ثبت‌شده پایین‌تر دیده شود
+    # جدول گزارش بر اساس تاریخ شمسی مرتب شود (جدیدترین تاریخ پایین)
+    # jdate فرمت YYYY/MM/DD دارد و به‌صورت رشته‌ای قابل مرتب‌سازی است.
     return (
         db.query(models.Transaction)
         .filter(_iran_filter())
-        .order_by(models.Transaction.id.asc())
+        .order_by(
+            models.Transaction.jdate.is_(None),
+            models.Transaction.jdate.asc(),
+            models.Transaction.id.asc(),
+        )
         .all()
     )
 
@@ -365,6 +547,11 @@ def create_transaction(db: Session, transaction: schemas.TransactionCreate) -> m
             db.refresh(obj)
 
         _reconcile_settlement_for_date(db, obj.jdate)
+        # اگر تراکنش واقعی داخل بازه batch ها باشد، batch ها هم باید آپدیت شوند
+        try:
+            reconcile_settle_batches(db)
+        except Exception:
+            pass
 
     # گزارش PDF ماهانه (ایران/آلمان) را به‌روز کن
     try:
@@ -405,17 +592,30 @@ def update_transaction(
     # اگر ردیف تسویه باشد، ساختار آن حفظ شود
     if incoming_tt == "تسویه مالیات" or _is_settle_transfer_type(obj.transfer_type):
         jd_for_tag = data.get("jdate") or obj.jdate
-        wants_lock = incoming_tt.startswith("SETTLE_TAX_LOCK|") if incoming_tt else False
-        is_locked_now = _is_settle_locked(obj.transfer_type)
-        lock = wants_lock or is_locked_now
+        is_batch = str(obj.transfer_type or "").strip().startswith("SETTLE_BATCH|")
 
-        if jd_for_tag:
-            data["transfer_type"] = _settle_lock_tag(jd_for_tag, obj.id) if lock else _settle_tag(jd_for_tag, obj.id)
+        if is_batch:
+            # ردیف‌های Batch نباید به تسویه قدیمی تبدیل شوند؛ tag batch حفظ می‌شود
+            info = _parse_settle_batch_tag(obj.transfer_type) or {"prev": "0000/00/00", "end": jd_for_tag or (obj.jdate or "")}
+            prev = _safe_jdate(info.get("prev")) or "0000/00/00"
+            end = _safe_jdate(jd_for_tag or info.get("end")) or _safe_jdate(obj.jdate) or None
+            if end:
+                data["transfer_type"] = _settle_batch_tag(prev, end, obj.id)
+                data["destination_bank"] = TAX_BANK
+                data["iran_type"] = "خروجی"
+                # مبلغ batch توسط reconcile_settle_batches تنظیم می‌شود
         else:
-            data["transfer_type"] = obj.transfer_type or ("SETTLE_TAX_LOCK|tmp" if lock else "SETTLE_TAX|tmp")
+            wants_lock = incoming_tt.startswith("SETTLE_TAX_LOCK|") if incoming_tt else False
+            is_locked_now = _is_settle_locked(obj.transfer_type)
+            lock = wants_lock or is_locked_now
 
-        data["destination_bank"] = TAX_BANK
-        # fee/tax برای ردیف تسویه قابل ویرایش است (طبق نیاز شما)
+            if jd_for_tag:
+                data["transfer_type"] = _settle_lock_tag(jd_for_tag, obj.id) if lock else _settle_tag(jd_for_tag, obj.id)
+            else:
+                data["transfer_type"] = obj.transfer_type or ("SETTLE_TAX_LOCK|tmp" if lock else "SETTLE_TAX|tmp")
+
+            data["destination_bank"] = TAX_BANK
+            # fee/tax برای ردیف تسویه قابل ویرایش است (طبق نیاز شما)
 
     merged_for_auto = {
         "type": data.get("type", obj.type),
@@ -468,6 +668,12 @@ def update_transaction(
 
     db.refresh(obj)
 
+    if obj.type == "ایران":
+        try:
+            reconcile_settle_batches(db)
+        except Exception:
+            pass
+
     # گزارش PDF ماهانه (ایران/آلمان) را به‌روز کن
     try:
         from . import reports
@@ -495,6 +701,10 @@ def delete_transaction(db: Session, transaction_id: int) -> bool:
 
     if (old_snapshot.type or "") in IRAN_TYPE_VALUES and old_snapshot.jdate:
         _reconcile_settlement_for_date(db, old_snapshot.jdate)
+        try:
+            reconcile_settle_batches(db)
+        except Exception:
+            pass
 
     # گزارش PDF ماهانه را به‌روز کن
     try:
@@ -509,10 +719,16 @@ def delete_transaction(db: Session, transaction_id: int) -> bool:
 
 def compute_iran_pending_tax(db: Session) -> float:
     """
-    مالیات تسویه‌نشده = جمع (مالیات لازم هر تاریخ - تسویه همان تاریخ)
-    اگر تاریخی قبلاً تسویه شده و بعداً ویرایش/حذف/افزودن شده باشد،
-    reconcile همان تاریخ را آپدیت می‌کند و pending برای آن تاریخ بالا نمی‌رود.
+    مالیات تسویه‌نشده:
+    - در منطق جدید (Batch): جمع مالیات لازم خروجی‌های واقعی - جمع مبالغ تسویه‌های Batch
+    - ردیف‌های قدیمی (SETTLE_TAX/SETTLE_RUN) دیگر مبنای محاسبه نیستند.
     """
+    # برای جلوگیری از اختلاف چند ریالی/ناهمگامی، قبل از محاسبه batch ها را reconcile کن
+    try:
+        reconcile_settle_batches(db)
+    except Exception:
+        pass
+
     real_outs = (
         db.query(models.Transaction)
         .filter(
@@ -524,40 +740,28 @@ def compute_iran_pending_tax(db: Session) -> float:
         .all()
     )
 
-    settle_txs = (
+    batch_settles = (
         db.query(models.Transaction)
         .filter(
             _iran_filter(),
-            or_(
-                models.Transaction.transfer_type.like("SETTLE_TAX|%"),
-                models.Transaction.transfer_type.like("SETTLE_TAX_LOCK|%"),
-            ),
+            models.Transaction.transfer_type.like("SETTLE_BATCH|%"),
         )
         .all()
     )
 
-    required_by_date: Dict[str, float] = {}
+    required_total = 0
     for t in real_outs:
         jd = _safe_jdate(t.jdate)
         if not jd:
             continue
-        required_by_date[jd] = required_by_date.get(jd, 0.0) + round(float(t.iran_amount or 0) * AUTO_TAX_RATE)
+        required_total += int(round(float(t.tax or 0)))
 
-    settled_by_date: Dict[str, float] = {}
-    for t in settle_txs:
-        jd = _safe_jdate(t.jdate)
-        if not jd:
-            continue
-        settled_by_date[jd] = settled_by_date.get(jd, 0.0) + float(t.iran_amount or 0)
+    settled_total = 0
+    for t in batch_settles:
+        settled_total += int(round(float(t.iran_amount or 0)))
 
-    pending = 0.0
-    for jd, required in required_by_date.items():
-        settled = settled_by_date.get(jd, 0.0)
-        diff = required - settled
-        if diff > 0:
-            pending += diff
-
-    return pending
+    pending = int(required_total - settled_total)
+    return float(pending) if pending > 0 else 0.0
 
 
 def compute_iran_balances(db: Session) -> Dict[str, object]:
@@ -630,6 +834,8 @@ def settle_iran_tax(db: Session, from_bank: str, jdate: str, description: str = 
     if not jd_end:
         return None
 
+    # end date همان تاریخی است که کاربر انتخاب می‌کند (ممکن است چند روز بعد از آخرین تراکنش باشد)
+
     # طبق خواسته تو، از بانکی که بیشترین مانده را دارد
     auto_bank = _richest_bank(db)
     fb = (auto_bank or from_bank or "").strip()
@@ -640,93 +846,73 @@ def settle_iran_tax(db: Session, from_bank: str, jdate: str, description: str = 
     base_desc = f"تسویه مالیات → {TAX_BANK}"
     full_desc = base_desc + (f" — {desc}" if desc else "")
 
-    # تاریخ‌هایی که تا تاریخ پایان، خروجی واقعی دارند و برایشان مالیات لازم است
-    real_outs = (
+    # پیدا کردن آخرین batch قبلی (بر اساس end_date داخل tag)
+    prev_end = "0000/00/00"
+    batches = _settle_batch_transactions(db)
+    if batches:
+        # آخرین end
+        ends = []
+        for t in batches:
+            info = _parse_settle_batch_tag(t.transfer_type) or {}
+            end = _safe_jdate(info.get("end")) or _safe_jdate(t.jdate)
+            if end:
+                ends.append(end)
+        if ends:
+            prev_end = max(ends)
+
+    # اگر end انتخابی <= آخرین end قبلی باشد، این یعنی کاربر دارد بازه قبلی را دوباره می‌زند.
+    # در این حالت batch همان end را آپدیت می‌کنیم (و بعد reconcile کل batch ها).
+    end = jd_end
+    required = _required_tax_for_range(db, prev_end, end) if end > prev_end else _required_tax_for_range(db, "0000/00/00", end)
+
+    # پیدا کردن batch برای همین end (اگر وجود داشته باشد)
+    existing = (
         db.query(models.Transaction)
         .filter(
             _iran_filter(),
-            models.Transaction.iran_type == "خروجی",
-            models.Transaction.bank_name != TAX_BANK,
-            _not_settle_filter(),
+            models.Transaction.jdate == end,
+            models.Transaction.transfer_type.like(f"SETTLE_BATCH|%|{end}|%"),
         )
+        .order_by(models.Transaction.id.asc())
         .all()
     )
 
-    required_by_date: Dict[str, float] = {}
-    for t in real_outs:
-        jd = _safe_jdate(t.jdate)
-        if not jd or jd > jd_end:
-            continue
-        required_by_date[jd] = required_by_date.get(jd, 0.0) + round(float(t.iran_amount or 0) * AUTO_TAX_RATE)
+    if existing:
+        tx = existing[0]
+        tx.type = "ایران"
+        tx.iran_type = "خروجی"
+        tx.bank_name = fb
+        tx.destination_bank = TAX_BANK
+        tx.iran_amount = required
+        tx.depositor_name = "تسویه مالیات"
+        tx.deposit_fee = 0
+        tx.tax = 0
+        tx.description = full_desc
+        # tag بعد از reconcile کامل درست می‌شود
+        for extra in existing[1:]:
+            db.delete(extra)
+        db.commit()
+        db.refresh(tx)
+    else:
+        tx = models.Transaction(
+            type="ایران",
+            iran_type="خروجی",
+            bank_name=fb,
+            destination_bank=TAX_BANK,
+            iran_amount=required,
+            depositor_name="تسویه مالیات",
+            transfer_type="SETTLE_BATCH|tmp",
+            deposit_fee=0,
+            tax=0,
+            description=full_desc,
+            date=datetime.now(),
+            jdate=end,
+        )
+        db.add(tx)
+        db.commit()
+        db.refresh(tx)
 
-    # اگر تا این تاریخ چیزی برای تسویه نیست، کاری نکن
-    if not required_by_date:
-        return None
+    # بعد از هر ایجاد/آپدیت، کل batch ها reconcile شوند تا بازه‌ها زنجیروار درست بمانند
+    reconcile_settle_batches(db)
 
-    settled_dates: List[str] = []
-    total_amount = 0.0
-    last_settle_id: Optional[int] = None
-
-    for jd in sorted(required_by_date.keys()):
-        required = float(required_by_date.get(jd) or 0.0)
-        if required <= 0:
-            continue
-
-        settle_txs = _settle_transactions_for_date(db, jd)
-        if settle_txs:
-            tx = settle_txs[0]
-            tx.type = "ایران"
-            tx.iran_type = "خروجی"
-            tx.bank_name = fb
-            tx.destination_bank = TAX_BANK
-            tx.iran_amount = required
-            tx.depositor_name = "تسویه مالیات"
-            tx.deposit_fee = 0
-            tx.tax = 0
-            tx.description = full_desc
-            tx.jdate = jd
-            tx.transfer_type = _settle_tag(jd, tx.id)
-
-            for extra in settle_txs[1:]:
-                db.delete(extra)
-
-            db.commit()
-            db.refresh(tx)
-            last_settle_id = tx.id
-        else:
-            settle_tx = models.Transaction(
-                type="ایران",
-                iran_type="خروجی",
-                bank_name=fb,
-                destination_bank=TAX_BANK,
-                iran_amount=required,
-                depositor_name="تسویه مالیات",
-                transfer_type="SETTLE_TAX|tmp",
-                deposit_fee=0,
-                tax=0,
-                description=full_desc,
-                date=datetime.now(),
-                jdate=jd,
-            )
-            db.add(settle_tx)
-            db.commit()
-            db.refresh(settle_tx)
-
-            settle_tx.transfer_type = _settle_tag(jd, settle_tx.id)
-            db.commit()
-            db.refresh(settle_tx)
-            last_settle_id = settle_tx.id
-
-        total_amount += required
-        settled_dates.append(jd)
-
-    if not settled_dates:
-        return None
-
-    return {
-        "settle_id": last_settle_id,
-        "amount": total_amount,
-        "from_bank": fb,
-        "dates": settled_dates,
-        "end_date": jd_end,
-    }
+    return {"settle_id": tx.id, "amount": required, "from_bank": fb, "end_date": end}

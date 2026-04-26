@@ -13,6 +13,13 @@
     table{min-width:1200px}
     th,td{font-size:12px}
     td input, td select{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:inherit;width:100%;font-size:12px;box-sizing:border-box}
+    td textarea{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:inherit;width:100%;font-size:12px;box-sizing:border-box;min-height:34px;resize:vertical}
+    /* عددها روی موبایل/دسکتاپ خواناتر و کامل‌تر */
+    td input.amt, td input.fee, td input.tax{
+      direction:ltr;
+      text-align:left;
+      font-variant-numeric:tabular-nums;
+    }
     td:nth-child(1){width:40px}
     td:nth-child(2){width:90px}
     td:nth-child(3),td:nth-child(4){width:100px}
@@ -24,8 +31,12 @@
     td:nth-child(11){width:160px}
     td:nth-child(12){width:120px}
     @media (max-width:900px){
-      table{min-width:1150px}
+      /* برای اینکه عددهای بزرگ مثل 1,000,000,000 کامل دیده شوند، عرض جدول و ستون مبلغ را بیشتر می‌کنیم */
+      table{min-width:1350px}
+      td:nth-child(7){width:170px}
       th,td{font-size:12px}
+      td input, td select{font-size:11px;padding:5px 6px}
+      td textarea{font-size:11px;padding:5px 6px;min-height:44px}
     }
   </style>
 </head>
@@ -35,6 +46,10 @@
     <div class="title">گزارش تراکنش‌های ایران</div>
     <div class="row">
       <a class="btnLink btn" href="/iran">← بازگشت</a>
+      <label class="pill" style="display:flex;gap:8px;align-items:center">
+        <input type="checkbox" id="showLegacy" />
+        نمایش تسویه‌های قدیمی (روزانه)
+      </label>
       <span class="pill">برای دیدن تغییرات، بعد از ذخیره/حذف جدول خودش به‌روز می‌شود.</span>
     </div>
   </div>
@@ -109,8 +124,38 @@
       .replaceAll(">", "&gt;");
   }
 
+  const TRANSFER_TYPE_OPTIONS = [
+    "کارت به کارت",
+    "شبا",
+    "ساتنا",
+    "حساب به حساب",
+    "پایا",
+    "نقدی",
+    "نامشخص",
+  ];
+
+  function transferTypeSelectHtml(current){
+    const cur = String(current || "").trim();
+    const base = TRANSFER_TYPE_OPTIONS.slice();
+    if (cur && !base.includes(cur)) base.unshift(cur);
+    return `
+      <select class="ttypeSel">
+        ${base.map(v => `<option value="${esc(v)}" ${v===cur ? "selected" : ""}>${esc(v)}</option>`).join("")}
+      </select>
+    `;
+  }
+
   async function load(){
-    const data = await fetch("/transactions/iran").then(r => r.json());
+    const showLegacy = !!document.getElementById("showLegacy")?.checked;
+    const data0 = await fetch("/transactions/iran").then(r => r.json());
+    const data = Array.isArray(data0)
+      ? data0.filter(t => {
+          const tt = String(t.transfer_type || "");
+          const isLegacyDaily = tt.startsWith("SETTLE_TAX|") || tt.startsWith("SETTLE_TAX_LOCK|") || tt.startsWith("SETTLE_RUN|");
+          // Batchها همیشه نمایش داده شوند؛ Legacy فقط با تیک
+          return showLegacy ? true : !isLegacyDaily;
+        })
+      : data0;
     const tbody = document.getElementById("rows");
 
     if(!Array.isArray(data) || !data.length){
@@ -124,12 +169,13 @@
       const destBank = t.destination_bank || "";
       const iranType = t.iran_type || "";
       const rawTransferType = t.transfer_type || "";
-      const isSettle = rawTransferType.startsWith("SETTLE_TAX|") || rawTransferType.startsWith("SETTLE_TAX_LOCK|");
+      const isLegacySettle = rawTransferType.startsWith("SETTLE_TAX|") || rawTransferType.startsWith("SETTLE_TAX_LOCK|") || rawTransferType.startsWith("SETTLE_RUN|");
+      const isBatch = rawTransferType.startsWith("SETTLE_BATCH|");
       const isLocked = rawTransferType.startsWith("SETTLE_TAX_LOCK|");
-      const displayTType = isSettle ? "تسویه مالیات" : rawTransferType;
+      const displayTType = isBatch ? "تسویه مالیات (بازه)" : (isLegacySettle ? "تسویه مالیات (قدیمی)" : rawTransferType);
 
       return `
-        <tr data-id="${t.id}" data-raw-ttype="${esc(rawTransferType)}" style="${isSettle ? 'background:#fffbeb;' : ''}">
+        <tr data-id="${t.id}" data-raw-ttype="${esc(rawTransferType)}" style="${(isLegacySettle || isBatch) ? 'background:#fffbeb;' : ''}">
           <td>${i + 1}</td>
           <td>
             <select class="type">
@@ -142,8 +188,12 @@
           <td><input class="destbank" value="${esc(destBank)}" /></td>
           <td>
             <div style="display:flex;gap:8px;align-items:center">
-              <input class="ttype" value="${esc(displayTType)}" readonly style="flex:1" />
-              ${isSettle ? `<label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="lock" ${isLocked ? "checked" : ""} /> قفل</label>` : ``}
+              ${
+                (isLegacySettle || isBatch)
+                  ? `<input class="ttype" value="${esc(displayTType)}" readonly style="flex:1" />`
+                  : `<div style="flex:1">${transferTypeSelectHtml(rawTransferType)}</div>`
+              }
+              ${isLegacySettle ? `<label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="lock" ${isLocked ? "checked" : ""} /> قفل</label>` : ``}
             </div>
           </td>
           <td><input class="name" value="${esc(t.depositor_name || "")}" /></td>
@@ -151,7 +201,7 @@
           <td><input class="fee" value="${t.deposit_fee ? fmt(t.deposit_fee) : "0"}" /></td>
           <td><input class="tax" value="${t.tax ? fmt(t.tax) : "0"}" /></td>
           <td><input class="jdate" value="${esc(jdate || "")}" placeholder="1404/10/07" /></td>
-          <td><input class="desc" value="${esc(t.description || "")}" /></td>
+          <td><textarea class="desc">${esc(t.description || "")}</textarea></td>
           <td>
             <button class="ok save">ذخیره</button>
             <button class="danger del">حذف</button>
@@ -185,7 +235,9 @@
           destination_bank: tr.querySelector(".destbank").value.trim(),
           transfer_type: isSettle
             ? (wantsLock ? "SETTLE_TAX_LOCK|" : "SETTLE_TAX|")
-            : (rawTransferType || tr.querySelector(".ttype").value.trim()),
+            : (rawTransferType.startsWith("SETTLE_BATCH|")
+                ? rawTransferType
+                : ((tr.querySelector(".ttypeSel")?.value || rawTransferType || tr.querySelector(".ttype")?.value || "").trim())),
           depositor_name: tr.querySelector(".name").value.trim(),
           iran_amount: toNum(tr.querySelector(".amt").value),
           deposit_fee: toNum(tr.querySelector(".fee").value),
@@ -224,6 +276,7 @@
   }
 
   load();
+  document.getElementById("showLegacy")?.addEventListener("change", load);
 </script>
 </body>
 </html>

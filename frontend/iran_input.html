@@ -50,8 +50,8 @@
       </div>
 
       <div>
-        <label>تاریخ (شمسی) — کلیک کن پاپ‌اپ باز می‌شه (قابل تایپ)</label>
-        <input id="jdate" placeholder="1404/10/07" />
+        <label>تاریخ (شمسی)</label>
+        <input id="jdate" placeholder="1404/10/07" inputmode="numeric" />
       </div>
 
       <div style="grid-column:1/-1">
@@ -65,21 +65,6 @@
     </div>
 
     <div id="msg" class="msg"></div>
-  </div>
-</div>
-
-<div id="overlay" class="overlay">
-  <div class="modal">
-    <h3 style="margin:0 0 10px">انتخاب تاریخ شمسی</h3>
-    <div class="grid3">
-      <select id="py"></select>
-      <select id="pm"></select>
-      <select id="pd"></select>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
-      <button class="btn" id="closePop">انصراف</button>
-      <button class="btn" style="background:#22c55e;color:#fff;border-color:transparent" id="okPop">تایید</button>
-    </div>
   </div>
 </div>
 
@@ -105,7 +90,6 @@
     amountEl.value = n ? fmt(Math.round(n)) : "";
   });
 
-  function pad2(x){ return String(x).padStart(2,'0'); }
   function faDigitsToEn(s){
     const map={'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
     return String(s).replace(/[۰-۹]/g, ch => map[ch] || ch);
@@ -114,66 +98,8 @@
     const f = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {year:'numeric',month:'2-digit',day:'2-digit'});
     return faDigitsToEn(f.format(new Date()));
   }
-
-  // popup
-  const jdateEl = document.getElementById('jdate');
-  const overlay = document.getElementById('overlay');
-  const py = document.getElementById('py');
-  const pm = document.getElementById('pm');
-  const pd = document.getElementById('pd');
-
-  function fillPopup(){
-    py.innerHTML=""; pm.innerHTML=""; pd.innerHTML="";
-    for(let y=1395;y<=1415;y++){
-      const op=document.createElement('option'); op.value=String(y); op.textContent=String(y);
-      py.appendChild(op);
-    }
-    for(let m=1;m<=12;m++){
-      const op=document.createElement('option'); op.value=String(m); op.textContent=pad2(m);
-      pm.appendChild(op);
-    }
-  }
-  function daysInJalaliMonth(m){
-    m = parseInt(m,10);
-    if(m<=6) return 31;
-    if(m<=11) return 30;
-    return 29;
-  }
-  function refillDays(){
-    const max = daysInJalaliMonth(pm.value);
-    const cur = parseInt(pd.value||"1",10);
-    pd.innerHTML="";
-    for(let d=1; d<=max; d++){
-      const op=document.createElement('option'); op.value=String(d); op.textContent=pad2(d);
-      pd.appendChild(op);
-    }
-    pd.value = String(Math.min(cur, max));
-  }
-  function parseJdate(s){
-    const m = String(s||"").trim().match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-    if(!m) return null;
-    return {y:m[1], m:String(parseInt(m[2],10)), d:String(parseInt(m[3],10))};
-  }
-  function openPop(){
-    const v = parseJdate(jdateEl.value) || parseJdate(todayJalali());
-    py.value = v?.y || "1404";
-    pm.value = v?.m || "10";
-    refillDays();
-    pd.value = v?.d || "7";
-    overlay.classList.add('show');
-  }
-  function closePop(){ overlay.classList.remove('show'); }
-
-  fillPopup();
-  jdateEl.value = todayJalali();
-
-  jdateEl.addEventListener('click', openPop);
-  pm.addEventListener('change', refillDays);
-  document.getElementById('closePop').addEventListener('click', closePop);
-  document.getElementById('okPop').addEventListener('click', ()=>{
-    jdateEl.value = `${py.value}/${pad2(pm.value)}/${pad2(pd.value)}`;
-    closePop();
-  });
+  // تاریخ به صورت دستی وارد می‌شود
+  document.getElementById('jdate').value = todayJalali();
 
   document.getElementById("save").addEventListener("click", async ()=>{
     const bank = document.getElementById("bank").value;

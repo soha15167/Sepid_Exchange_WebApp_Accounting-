@@ -75,6 +75,10 @@ def list_available_months(db: Session) -> Dict[str, List[str]]:
     de_months = set()
     for t in db.query(models.Transaction).all():
         if (t.type or "").strip() == "ایران":
+            tt = str(t.transfer_type or "").strip()
+            is_legacy = tt.startswith("SETTLE_TAX|") or tt.startswith("SETTLE_TAX_LOCK|") or tt.startswith("SETTLE_RUN|")
+            if is_legacy:
+                continue
             mk = _iran_month_key(t.jdate)
             if mk:
                 iran_months.add(mk)
@@ -154,23 +158,66 @@ def _fa_text(s: str) -> str:
         return s
 
 
-def _register_font(canvas) -> Tuple[str, bool]:
+def _pick_font_path() -> Optional[Path]:
     """
-    Try to register a Persian-capable font. Prefer Windows Tahoma if available.
-    Returns (font_name, ok)
+    Find a Persian/Arabic-capable TTF on the current OS.
+    - Windows: Tahoma
+    - Linux: Noto/DejaVu common paths
+    """
+    # Explicit override (useful on servers)
+    override = (os.environ.get("SEPID_PDF_FONT") or "").strip()
+    if override:
+        p = Path(override)
+        if p.exists():
+            return p
+
+    # Windows default
+    tahoma = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "tahoma.ttf"
+    if tahoma.exists():
+        return tahoma
+
+    linux_candidates = [
+        # Noto (best)
+        Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoNaskhArabicUI-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansArabicUI-Regular.ttf"),
+        # Noto Kufi Arabic (common in fonts-noto-extra)
+        Path("/usr/share/fonts/truetype/noto/NotoKufiArabic-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoKufiArabic-Medium.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoNaskhArabic-Regular.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Regular.ttf"),
+        # Vazirmatn (some distros)
+        Path("/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/vazirmatn/Vazirmatn-FD-Regular.ttf"),
+        # DejaVu fallback
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf"),
+        # FreeFont fallback
+        Path("/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+    ]
+    for p in linux_candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _register_font_name() -> Tuple[str, bool]:
+    """
+    Register a font in reportlab and return (font_name, ok).
     """
     try:
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.pdfbase import pdfmetrics  # type: ignore
+        from reportlab.pdfbase.ttfonts import TTFont  # type: ignore
 
-        # Windows default
-        tahoma = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "tahoma.ttf"
-        if tahoma.exists():
-            pdfmetrics.registerFont(TTFont("Tahoma", str(tahoma)))
-            return "Tahoma", True
+        p = _pick_font_path()
+        if not p:
+            return "Helvetica", False
+        name = "SepidFont"
+        pdfmetrics.registerFont(TTFont(name, str(p)))
+        return name, True
     except Exception:
-        pass
-    return "Helvetica", False
+        return "Helvetica", False
 
 
 def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
@@ -182,8 +229,13 @@ def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # type: ignore
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle  # type: ignore
 
-    # برای ایران Landscape بهتر است تا همه ستون‌ها در یک خط جا شوند
-    page_size = landscape(A4) if region == "iran" else A4
+    # برای ایران: صفحه عریض‌تر از A4 (برای اینکه جدول کامل و بدون فشرده‌سازی جا شود).
+    # ارتفاع مثل A4 landscape می‌ماند تا پرینت با "Fit/Scale" راحت انجام شود.
+    if region == "iran":
+        a4_land = landscape(A4)
+        page_size = (1200, a4_land[1])  # wider than A4 landscape
+    else:
+        page_size = A4
 
     doc = SimpleDocTemplate(
         str(p),
@@ -195,19 +247,13 @@ def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
         title=f"{region}-{month}",
     )
 
-    # Register font (Tahoma on Windows) for Persian
-    try:
-        from reportlab.pdfbase import pdfmetrics  # type: ignore
-        from reportlab.pdfbase.ttfonts import TTFont  # type: ignore
-
-        tahoma = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "tahoma.ttf"
-        if tahoma.exists():
-            pdfmetrics.registerFont(TTFont("Tahoma", str(tahoma)))
-            base_font = "Tahoma"
-        else:
-            base_font = "Helvetica"
-    except Exception:
-        base_font = "Helvetica"
+    base_font, font_ok = _register_font_name()
+    if region == "iran" and not font_ok:
+        raise RuntimeError(
+            "Persian font not found on server. Install a Persian-capable font (recommended: Noto) "
+            "or set SEPID_PDF_FONT to a .ttf path. Example on Ubuntu: "
+            "`sudo apt install -y fonts-noto-core fonts-noto-extra fonts-dejavu-core`"
+        )
 
     styles = getSampleStyleSheet()
     rtl_style = ParagraphStyle(
@@ -245,53 +291,86 @@ def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
             .order_by(models.Transaction.id.asc())
             .all()
         )
-        header = ["#", "تاریخ", "نوع", "بانک", "مقصد", "مبلغ", "کارمزد", "مالیات", "توضیح"]
-        # نکته: برای اینکه هر خانه در یک خط بماند، از Paragraph استفاده نمی‌کنیم (wrap می‌کند).
-        data = [[_fa_text(h) for h in header]]
+        # همسو با گزارش: تسویه‌های قدیمی (روزانه/ثبت عملیات) را وارد PDF نکن
+        items = [
+            t
+            for t in items
+            if not (
+                str(t.transfer_type or "").strip().startswith("SETTLE_TAX|")
+                or str(t.transfer_type or "").strip().startswith("SETTLE_TAX_LOCK|")
+                or str(t.transfer_type or "").strip().startswith("SETTLE_RUN|")
+            )
+        ]
+        # ترتیب و ستون‌ها دقیقاً مثل صفحه گزارش ایران
+        header = [
+            "ردیف",
+            "نوع",
+            "بانک (منبع)",
+            "بانک مقصد",
+            "نوع حواله",
+            "واریز/برداشت کننده",
+            "مبلغ (ریال)",
+            "کارمزد",
+            "مالیات",
+            "تاریخ (شمسی)",
+            "توضیحات",
+        ]
+        # کاربر خواسته هیچ کوتاه‌سازی انجام نشود: از Paragraph استفاده می‌کنیم تا متن‌ها کامل و چندخطی نمایش داده شوند.
+        data = [[Paragraph(_fa_text(h), rtl_style) for h in header]]
 
-        # Landscape: عرض ستون‌ها (جمع باید داخل عرض صفحه جا شود)
-        col_widths = [18, 70, 55, 70, 75, 70, 60, 60, 260]
+        # عرض ستون‌ها متناسب با صفحه عریض‌تر (جمع ~ عرض مفید صفحه)
+        col_widths = [36, 60, 90, 90, 90, 120, 90, 70, 70, 90, 336]
 
-        def clip_to_width(txt: str, width_pt: float) -> str:
-            """
-            متن را طوری کوتاه می‌کند که داخل عرض ستون جا شود
-            (به‌جای wrap شدن/به‌هم‌ریختن جدول).
-            """
-            s = _fa_text(str(txt or ""))
-            max_w = max(0.0, float(width_pt) - 10.0)
-            try:
-                from reportlab.pdfbase import pdfmetrics  # type: ignore
-
-                def w(t: str) -> float:
-                    return float(pdfmetrics.stringWidth(t, base_font, 9))
-
-                if w(s) <= max_w:
-                    return s
-                ell = "…"
-                out = s
-                while out and w(out + ell) > max_w:
-                    out = out[:-1]
-                return (out + ell) if out else ell
-            except Exception:
-                return s[:80]
+        def cell(v: object) -> Paragraph:
+            return Paragraph(_fa_text(str(v or "")), rtl_style)
         i = 1
+        def normalize_jdate(s: str) -> str:
+            raw = (s or "").strip()
+            if not raw:
+                return ""
+            parts = raw.split("/")
+            if len(parts) != 3:
+                return raw
+            y, m, d = parts[0].strip(), parts[1].strip(), parts[2].strip()
+            if len(m) == 1:
+                m = "0" + m
+            if len(d) == 1:
+                d = "0" + d
+            return f"{y}/{m}/{d}"
+
+        # دقیقاً مثل گزارش: بر اساس تاریخ شمسی سپس id مرتب
+        items = sorted(
+            items,
+            key=lambda t: (
+                normalize_jdate(str(t.jdate or "")) or "9999/99/99",
+                int(t.id or 0),
+            ),
+        )
+
         for t in items:
+            jdate_norm = normalize_jdate(str(t.jdate or ""))
             row = [
                 str(i),
-                str(t.jdate or ""),
                 str(t.iran_type or ""),
                 str(t.bank_name or ""),
                 str(t.destination_bank or ""),
+                ("تسویه مالیات (بازه)" if str(t.transfer_type or "").startswith("SETTLE_BATCH|") else str(t.transfer_type or "")),
+                str(t.depositor_name or ""),
                 f"{int(t.iran_amount or 0):,}",
                 f"{int(t.deposit_fee or 0):,}",
                 f"{int(t.tax or 0):,}",
+                jdate_norm,
                 str(t.description or ""),
             ]
-            clipped = [clip_to_width(row[idx], col_widths[idx]) for idx in range(len(col_widths))]
-            data.append(clipped)
+            data.append([cell(v) for v in row])
             i += 1
 
-        table = Table(data, colWidths=col_widths, repeatRows=1)
+        # RTL واقعی: جدول را از راست به چپ نمایش می‌دهیم (معکوس‌کردن ستون‌ها)
+        # (سمت راست = ردیف، سمت چپ = توضیحات؛ مثل گزارش تراکنش)
+        data_rtl = [list(reversed(r)) for r in data]
+        col_widths_rtl = list(reversed(col_widths))
+
+        table = Table(data_rtl, colWidths=col_widths_rtl, repeatRows=1, hAlign="RIGHT")
         table.setStyle(
             TableStyle(
                 [

@@ -13,7 +13,22 @@
     .list{display:flex;flex-direction:column;gap:8px}
     .item{border:1px solid var(--line);border-radius:12px;padding:10px}
     .name{font-weight:900}
-    iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:16px;background:#fff}
+    .pdfViewer{
+      width:100%;
+      height:72vh;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+      overflow:auto;
+      display:flex;
+      align-items:flex-start;
+      justify-content:center;
+      padding:10px;
+    }
+    .pdfPages{display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:flex-start;width:100%}
+    .pdfPages canvas{max-width:100%;border:1px solid #eee;border-radius:8px}
+    .pdfTools{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%}
+    .pdfTools .btn{padding:8px 10px}
   </style>
 </head>
 <body>
@@ -39,16 +54,100 @@
 
     <div class="card pad">
       <h2 id="viewerTitle">نمایش PDF</h2>
-      <iframe id="viewer" src="about:blank"></iframe>
+      <div class="pdfViewer" id="viewer">
+        <div class="muted">برای پیش‌نمایش، روی «نمایش» بزن.</div>
+      </div>
     </div>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
     const viewer = document.getElementById('viewer');
     const viewerTitle = document.getElementById('viewerTitle');
+    // نکته: روی بعضی سرورها/مرورها، Worker لود نمی‌شود و پیش‌نمایش fail می‌شود.
+    // برای اینکه «نمایش» همیشه داخل همین صفحه کار کند، Worker را غیرفعال می‌کنیم.
 
     function esc(s){return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");}
+
+    let lastPreviewUrl = "";
+
+    async function renderPdfIntoViewer(arrayBuffer){
+      if(!window.pdfjsLib){
+        viewer.innerHTML = `
+          <div class="muted">
+            پیش‌نمایش داخلی لود نشد (PDF.js). لطفاً اینترنت/فیلتر CDN را چک کن و یک بار Ctrl+F5 بزن.
+          </div>
+        `;
+        return;
+      }
+      try{
+        viewer.innerHTML = `
+          <div class="pdfPages">
+            <div class="pdfTools">
+              <button class="btn" id="pdfPrev">صفحه قبل</button>
+              <div class="pill" id="pdfPageInfo">—</div>
+              <button class="btn" id="pdfNext">صفحه بعد</button>
+              <button class="btn blue" id="pdfOpenTab">باز کردن در تب جدید</button>
+            </div>
+            <canvas id="pdfCanvas"></canvas>
+          </div>
+        `;
+
+        const prevBtn = document.getElementById("pdfPrev");
+        const nextBtn = document.getElementById("pdfNext");
+        const openBtn = document.getElementById("pdfOpenTab");
+        const pageInfo = document.getElementById("pdfPageInfo");
+        const canvas = document.getElementById("pdfCanvas");
+        const ctx = canvas.getContext("2d");
+        if(!ctx) throw new Error("Canvas context not available");
+
+        // disableWorker: جلوگیری از خطای worker و نمایش قطعی در همان صفحه
+        const doc = await window.pdfjsLib.getDocument({data: arrayBuffer, disableWorker: true}).promise;
+        let pageNum = 1;
+
+        async function renderPage(){
+          pageInfo.textContent = `صفحه ${pageNum} از ${doc.numPages}`;
+          prevBtn.disabled = pageNum <= 1;
+          nextBtn.disabled = pageNum >= doc.numPages;
+
+          const page = await doc.getPage(pageNum);
+          const viewport0 = page.getViewport({scale: 1});
+          const maxW = Math.max(320, viewer.clientWidth - 24);
+          // روی موبایل scale کمتر تا رندر راحت‌تر شود
+          const scale = Math.min(1.35, maxW / viewport0.width);
+          const viewport = page.getViewport({scale});
+
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          await page.render({canvasContext: ctx, viewport}).promise;
+          viewer.scrollTop = 0;
+        }
+
+        prevBtn.addEventListener("click", async ()=>{
+          if(pageNum > 1){ pageNum -= 1; await renderPage(); }
+        });
+        nextBtn.addEventListener("click", async ()=>{
+          if(pageNum < doc.numPages){ pageNum += 1; await renderPage(); }
+        });
+        openBtn.addEventListener("click", ()=>{
+          if(lastPreviewUrl) window.open(lastPreviewUrl, "_blank");
+        });
+
+        await renderPage();
+      }catch(e){
+        console.error(e);
+        viewer.innerHTML = `
+          <div class="muted">
+            پیش‌نمایش داخلی روی موبایل خطا داد.
+            <div style="margin-top:8px">متن خطا: <b>${esc(e?.message || e || "unknown")}</b></div>
+            <div style="margin-top:8px">
+              ${lastPreviewUrl ? `<a class="btnLink btn blue" href="${lastPreviewUrl}" target="_blank" rel="noopener">باز کردن PDF</a>` : ``}
+            </div>
+          </div>
+        `;
+      }
+    }
 
     function itemHtml(r){
       const title = esc(r.display_name || (r.region.toUpperCase() + " " + r.month));
@@ -66,6 +165,7 @@
           <div style="height:8px"></div>
           <div class="row">
             <button class="btn" data-act="view">نمایش</button>
+            <button class="btn blue" data-act="download">دانلود</button>
             <button class="btn4" data-act="regen">بازسازی</button>
             <button class="btn3" data-act="del">حذف</button>
           </div>
@@ -93,18 +193,56 @@
       const items = container.querySelectorAll('.item');
       items.forEach((el, idx)=>{
         const r = arr[idx];
+        const regenBtn = el.querySelector('[data-act="regen"]');
+        const dlBtn = el.querySelector('[data-act="download"]');
         el.querySelector('[data-act="view"]').addEventListener('click', ()=>{
           viewerTitle.textContent = `نمایش PDF: ${r.region.toUpperCase()} ${r.month}`;
-          viewer.src = `/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}?v=${Date.now()}`;
+          (async ()=>{
+            viewer.innerHTML = `<div class="muted">در حال دریافت فایل…</div>`;
+            const url = `/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}?v=${Date.now()}`;
+            lastPreviewUrl = url;
+            // پیش‌نمایش واقعی: PDF را fetch کن و داخل همین صفحه رندر کن (بدون وابستگی به PDF-viewer مرورگر)
+            let res = await fetch(url);
+            if(!res.ok){
+              // اگر حذف شده بود، بازسازی و دوباره تلاش
+              await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}/regenerate`, {method:'POST'});
+              await load();
+              res = await fetch(url);
+            }
+            if(!res.ok){
+              alert("فایل PDF پیدا نشد. یک بار بازسازی را بزن.");
+              return;
+            }
+            const buf = await res.arrayBuffer();
+            await renderPdfIntoViewer(buf);
+          })();
         });
-        el.querySelector('[data-act="regen"]').addEventListener('click', async ()=>{
-          await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}/regenerate`, {method:'POST'});
-          await load();
+        regenBtn.addEventListener('click', async ()=>{
+          try{
+            regenBtn.disabled = true;
+            regenBtn.textContent = "در حال بازسازی…";
+            const res = await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}/regenerate`, {method:'POST'});
+            if(!res.ok){
+              const txt = await res.text();
+              alert("خطا در بازسازی گزارش:\n" + txt);
+              return;
+            }
+            await load();
+          }catch(e){
+            alert("خطا در ارتباط با سرور برای بازسازی.");
+          }finally{
+            regenBtn.disabled = false;
+            regenBtn.textContent = "بازسازی";
+          }
+        });
+
+        dlBtn.addEventListener('click', ()=>{
+          window.open(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}?download=1&v=${Date.now()}`, '_blank');
         });
         el.querySelector('[data-act="del"]').addEventListener('click', async ()=>{
           if(!confirm('حذف شود؟')) return;
           await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}`, {method:'DELETE'});
-          if(viewer.src.includes(`/reports/${r.region}/${r.month}`)) viewer.src = 'about:blank';
+          viewer.innerHTML = `<div class="muted">برای پیش‌نمایش، روی «نمایش» بزن.</div>`;
           await load();
         });
         el.querySelector('[data-act="rename"]').addEventListener('click', async ()=>{
