@@ -8,6 +8,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    @media (max-width:700px){
+      /* جلوگیری از زوم ناخواسته موبایل */
+      input, select, textarea{font-size:16px}
+    }
+  </style>
 </head>
 <body>
 <div class="page">
@@ -86,7 +92,7 @@
 
       <div>
         <label>تاریخ (شمسی)</label>
-        <input id="jdate" placeholder="1404/10/07" inputmode="numeric" />
+        <input id="jdate" readonly />
       </div>
 
       <div style="grid-column:1/-1">
@@ -103,7 +109,29 @@
   </div>
 </div>
 
+<!-- date picker popup -->
+<div id="overlay" class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:9998">
+  <div class="modal" style="background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(520px,92vw);padding:14px;border:1px solid var(--line)">
+    <h3 style="margin:0 0 10px;font-size:14px">انتخاب تاریخ شمسی</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <select id="py"></select>
+      <select id="pm"></select>
+      <select id="pd"></select>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn" id="closePop" type="button">انصراف</button>
+      <button class="btn blue" id="okPop" type="button">تایید</button>
+    </div>
+  </div>
+</div>
+
 <script>
+  // popup show/hide helper
+  const _overlayEl = document.getElementById("overlay");
+  const _origAdd = _overlayEl.classList.add.bind(_overlayEl.classList);
+  const _origRemove = _overlayEl.classList.remove.bind(_overlayEl.classList);
+  _overlayEl.classList.add = (cls)=>{ if(cls==="show") _overlayEl.style.display="flex"; _origAdd(cls); };
+  _overlayEl.classList.remove = (cls)=>{ if(cls==="show") _overlayEl.style.display="none"; _origRemove(cls); };
   const TAX_BANK = "سامان (مالیات)";
   const TAX_RATE = 0.002;   // 0.2%
   
@@ -214,8 +242,48 @@
     return faDigitsToEn(f.format(new Date()));
   }
 
-  // تاریخ پیش‌فرض امروز (قابل ویرایش دستی)
-  document.getElementById('jdate').value = todayJalali();
+  // تاریخ: با کلیک، انتخاب‌گر سال/ماه/روز باز می‌شود
+  const jdateEl = document.getElementById('jdate');
+  jdateEl.value = todayJalali();
+
+  let activeJdateEl = null;
+  function parseJdate(s){
+    const raw = faToEn(String(s||"")).trim();
+    const parts = raw.split("/");
+    if(parts.length !== 3) return null;
+    const y = parseInt(parts[0],10), m = parseInt(parts[1],10), d = parseInt(parts[2],10);
+    if(!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+    return {y,m,d};
+  }
+  function pad2(n){ return String(n).padStart(2,"0"); }
+  function openPicker(target){
+    activeJdateEl = target;
+    const v = parseJdate(target.value) || parseJdate(todayJalali());
+    const ySel = document.getElementById("py");
+    const mSel = document.getElementById("pm");
+    const dSel = document.getElementById("pd");
+    const y0 = v?.y || 1405;
+    const ys = [];
+    for(let y=y0-3; y<=y0+3; y++) ys.push(y);
+    ySel.innerHTML = ys.map(y=>`<option value="${y}">${y}</option>`).join("");
+    ySel.value = String(y0);
+    mSel.innerHTML = Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${pad2(m)}">${pad2(m)}</option>`).join("");
+    mSel.value = pad2(v?.m || 1);
+    dSel.innerHTML = Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${pad2(d)}">${pad2(d)}</option>`).join("");
+    dSel.value = pad2(v?.d || 1);
+    document.getElementById("overlay").classList.add("show");
+  }
+  function closePicker(){ document.getElementById("overlay").classList.remove("show"); }
+  document.getElementById("okPop").addEventListener("click", ()=>{
+    const y = document.getElementById("py").value;
+    const m = document.getElementById("pm").value;
+    const d = document.getElementById("pd").value;
+    if(activeJdateEl) activeJdateEl.value = `${y}/${m}/${d}`;
+    closePicker();
+  });
+  document.getElementById("closePop").addEventListener("click", closePicker);
+  jdateEl.addEventListener("pointerdown", (e)=>{ e.preventDefault(); jdateEl.blur(); openPicker(jdateEl); });
+  jdateEl.addEventListener("click", (e)=>{ e.preventDefault(); jdateEl.blur(); openPicker(jdateEl); });
 
   // init
   calcAuto();

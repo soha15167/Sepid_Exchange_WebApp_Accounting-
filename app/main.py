@@ -277,13 +277,19 @@ def api_get_report(
     if region not in ("iran", "de"):
         raise HTTPException(status_code=400, detail="Invalid region")
     p = reports.report_path(region, month)  # type: ignore[arg-type]
-    if not p.exists():
+    def is_bad_file(path):
+        try:
+            return (not path.exists()) or path.stat().st_size < 256
+        except Exception:
+            return True
+
+    if is_bad_file(p):
         # auto-generate on demand if month exists in DB
         try:
             reports.regenerate_month_pdf(db, region, month)  # type: ignore[arg-type]
-        except Exception:
-            pass
-    if not p.exists():
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
+    if is_bad_file(p):
         raise HTTPException(status_code=404, detail="Report not found")
     # inline باعث می‌شود داخل مرورگر/iframe نمایش داده شود (نه دانلود اجباری)
     disp = "attachment" if download else "inline"
@@ -314,7 +320,13 @@ def api_regenerate_report(region: str, month: str, db: Session = Depends(get_db)
     if region not in ("iran", "de"):
         raise HTTPException(status_code=400, detail="Invalid region")
     p = reports.regenerate_month_pdf(db, region, month)  # type: ignore[arg-type]
-    return {"ok": True, "path": str(p)}
+    try:
+        size = p.stat().st_size if p.exists() else 0
+    except Exception:
+        size = 0
+    if size < 256:
+        raise HTTPException(status_code=500, detail="Report generation produced empty file")
+    return {"ok": True, "path": str(p), "size": size}
 
 
 @app.delete("/reports/{region}/{month}")

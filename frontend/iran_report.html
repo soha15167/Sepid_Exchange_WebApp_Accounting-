@@ -10,10 +10,37 @@
   <link rel="stylesheet" href="/static/styles.css" />
   <style>
     body{margin:0;padding:0}
+    /* موبایل: نمایش کارت‌محور به جای جدول عریض */
+    .mobileList{display:none}
+    .mCard{border:1px solid var(--line);border-radius:16px;background:#fff;padding:12px;margin-bottom:12px}
+    .mHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+    .mIdx{font-weight:900}
+    .mGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .mGrid .full{grid-column:1/-1}
+    .mGrid label{font-size:12px;color:var(--muted)}
+    .mGrid input,.mGrid select,.mGrid textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px;font-family:inherit}
+    .mGrid textarea{min-height:56px;resize:vertical}
+    .mActions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px}
+    .mActions button{flex:1;min-width:120px}
+    .num{direction:ltr;text-align:left;font-variant-numeric:tabular-nums}
+
     table{min-width:1200px}
     th,td{font-size:12px}
     td input, td select{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:inherit;width:100%;font-size:12px;box-sizing:border-box}
     td textarea{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:inherit;width:100%;font-size:12px;box-sizing:border-box;min-height:34px;resize:vertical}
+    /* برای ردیف‌های تسویه: متن نوع حواله/تگ را کامل و چندخطی نشان بده */
+    .ttypeRO{
+      border:1px solid var(--line);
+      border-radius:6px;
+      padding:5px 7px;
+      font-family:inherit;
+      width:100%;
+      font-size:12px;
+      box-sizing:border-box;
+      min-height:34px;
+      resize:none;
+      background:#fff;
+    }
     /* عددها روی موبایل/دسکتاپ خواناتر و کامل‌تر */
     td input.amt, td input.fee, td input.tax{
       direction:ltr;
@@ -37,6 +64,14 @@
       th,td{font-size:12px}
       td input, td select{font-size:11px;padding:5px 6px}
       td textarea{font-size:11px;padding:5px 6px;min-height:44px}
+    }
+
+    @media (max-width:700px){
+      .tableWrap{display:none}
+      .mobileList{display:block}
+      .page{padding:12px}
+      /* جلوگیری از زوم ناخواسته موبایل هنگام کلیک روی input/select */
+      input, select, textarea{font-size:16px}
     }
   </style>
 </head>
@@ -78,6 +113,7 @@
         </tbody>
       </table>
     </div>
+    <div id="mobileList" class="mobileList"></div>
 
     <p class="muted" style="margin:10px 0 0">
       ردیف‌های “تسویه مالیات” همیشه کارمزد/مالیات صفر هستند و tag داخلی آن‌ها در سیستم حفظ می‌شود.
@@ -85,7 +121,66 @@
   </div>
 </div>
 
+<!-- date picker popup (shared) -->
+<div id="overlay" class="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:9998">
+  <div class="modal" style="background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(520px,92vw);padding:14px;border:1px solid var(--line)">
+    <h3 style="margin:0 0 10px;font-size:14px">انتخاب تاریخ شمسی</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <select id="py"></select>
+      <select id="pm"></select>
+      <select id="pd"></select>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn" id="closePop" type="button">انصراف</button>
+      <button class="btn blue" id="okPop" type="button">تایید</button>
+    </div>
+  </div>
+</div>
+
 <script>
+  // popup show/hide helper
+  const _overlayEl = document.getElementById("overlay");
+  const _origAdd = _overlayEl.classList.add.bind(_overlayEl.classList);
+  const _origRemove = _overlayEl.classList.remove.bind(_overlayEl.classList);
+  _overlayEl.classList.add = (cls)=>{ if(cls==="show") _overlayEl.style.display="flex"; _origAdd(cls); };
+  _overlayEl.classList.remove = (cls)=>{ if(cls==="show") _overlayEl.style.display="none"; _origRemove(cls); };
+
+  let activeJdateEl = null;
+  function pad2(n){ return String(n).padStart(2,"0"); }
+  function parseJdate(s){
+    const raw = faDigitsToEn(String(s||"")).trim();
+    const parts = raw.split("/");
+    if(parts.length !== 3) return null;
+    const y = parseInt(parts[0],10), m = parseInt(parts[1],10), d = parseInt(parts[2],10);
+    if(!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+    return {y,m,d};
+  }
+  function openPicker(target){
+    activeJdateEl = target;
+    const v = parseJdate(target.value) || null;
+    const ySel = document.getElementById("py");
+    const mSel = document.getElementById("pm");
+    const dSel = document.getElementById("pd");
+    const y0 = v?.y || 1405;
+    const ys = [];
+    for(let y=y0-3; y<=y0+3; y++) ys.push(y);
+    ySel.innerHTML = ys.map(y=>`<option value="${y}">${y}</option>`).join("");
+    ySel.value = String(y0);
+    mSel.innerHTML = Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${pad2(m)}">${pad2(m)}</option>`).join("");
+    mSel.value = pad2(v?.m || 1);
+    dSel.innerHTML = Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${pad2(d)}">${pad2(d)}</option>`).join("");
+    dSel.value = pad2(v?.d || 1);
+    _overlayEl.classList.add("show");
+  }
+  function closePicker(){ _overlayEl.classList.remove("show"); }
+  document.getElementById("okPop").addEventListener("click", ()=>{
+    const y = document.getElementById("py").value;
+    const m = document.getElementById("pm").value;
+    const d = document.getElementById("pd").value;
+    if(activeJdateEl) activeJdateEl.value = `${y}/${m}/${d}`;
+    closePicker();
+  });
+  document.getElementById("closePop").addEventListener("click", closePicker);
   function fmt(n){
     return new Intl.NumberFormat('en-US').format(Math.round(n || 0));
   }
@@ -157,13 +252,15 @@
         })
       : data0;
     const tbody = document.getElementById("rows");
+    const mobileList = document.getElementById("mobileList");
 
     if(!Array.isArray(data) || !data.length){
       tbody.innerHTML = `<tr><td colspan="12" class="muted">تراکنشی وجود ندارد.</td></tr>`;
+      if(mobileList) mobileList.innerHTML = `<div class="muted">تراکنشی وجود ندارد.</div>`;
       return;
     }
 
-    tbody.innerHTML = data.map((t, i) => {
+    const desktopHtml = data.map((t, i) => {
       const jdate = (t.jdate && String(t.jdate).trim()) ? t.jdate : (t.date ? toJalaliFromISO(t.date) : "");
       const bank = t.bank_name || "";
       const destBank = t.destination_bank || "";
@@ -190,7 +287,7 @@
             <div style="display:flex;gap:8px;align-items:center">
               ${
                 (isLegacySettle || isBatch)
-                  ? `<input class="ttype" value="${esc(displayTType)}" readonly style="flex:1" />`
+                  ? `<textarea class="ttypeRO" readonly style="flex:1">${esc(displayTType)}</textarea>`
                   : `<div style="flex:1">${transferTypeSelectHtml(rawTransferType)}</div>`
               }
               ${isLegacySettle ? `<label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="lock" ${isLocked ? "checked" : ""} /> قفل</label>` : ``}
@@ -200,7 +297,7 @@
           <td><input class="amt" value="${t.iran_amount ? fmt(t.iran_amount) : ""}" /></td>
           <td><input class="fee" value="${t.deposit_fee ? fmt(t.deposit_fee) : "0"}" /></td>
           <td><input class="tax" value="${t.tax ? fmt(t.tax) : "0"}" /></td>
-          <td><input class="jdate" value="${esc(jdate || "")}" placeholder="1404/10/07" /></td>
+          <td><input class="jdate" readonly value="${esc(jdate || "")}" placeholder="1404/10/07" /></td>
           <td><textarea class="desc">${esc(t.description || "")}</textarea></td>
           <td>
             <button class="ok save">ذخیره</button>
@@ -209,6 +306,94 @@
         </tr>
       `;
     }).join("");
+    tbody.innerHTML = desktopHtml;
+
+    // موبایل: کارت‌ها
+    if(mobileList){
+      mobileList.innerHTML = data.map((t, i) => {
+        const jdate = (t.jdate && String(t.jdate).trim()) ? t.jdate : (t.date ? toJalaliFromISO(t.date) : "");
+        const bank = t.bank_name || "";
+        const destBank = t.destination_bank || "";
+        const iranType = t.iran_type || "";
+        const rawTransferType = t.transfer_type || "";
+        const isLegacySettle = rawTransferType.startsWith("SETTLE_TAX|") || rawTransferType.startsWith("SETTLE_TAX_LOCK|") || rawTransferType.startsWith("SETTLE_RUN|");
+        const isBatch = rawTransferType.startsWith("SETTLE_BATCH|");
+        const isLocked = rawTransferType.startsWith("SETTLE_TAX_LOCK|");
+        const displayTType = isBatch ? "تسویه مالیات (بازه)" : (isLegacySettle ? "تسویه مالیات (قدیمی)" : rawTransferType);
+        return `
+          <div class="mCard" data-id="${t.id}" data-raw-ttype="${esc(rawTransferType)}" style="${(isLegacySettle || isBatch) ? 'background:#fffbeb;' : ''}">
+            <div class="mHead">
+              <div class="mIdx">ردیف ${i+1}</div>
+              <div class="pill">${esc(jdate || "")}</div>
+            </div>
+            <div class="mGrid">
+              <div>
+                <label>نوع</label>
+                <select class="type">
+                  <option value="ورودی" ${iranType === "ورودی" ? "selected" : ""}>ورودی</option>
+                  <option value="خروجی" ${iranType === "خروجی" ? "selected" : ""}>خروجی</option>
+                  <option value="تسویه مالیات" ${iranType === "تسویه مالیات" ? "selected" : ""}>تسویه مالیات</option>
+                </select>
+              </div>
+              <div>
+                <label>تاریخ (شمسی)</label>
+                <input class="jdate" readonly value="${esc(jdate || "")}" placeholder="1404/10/07" />
+              </div>
+              <div>
+                <label>بانک (منبع)</label>
+                <input class="bank" value="${esc(bank)}" />
+              </div>
+              <div>
+                <label>بانک مقصد</label>
+                <input class="destbank" value="${esc(destBank)}" />
+              </div>
+              <div class="full">
+                <label>نوع حواله</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  ${
+                    (isLegacySettle || isBatch)
+                      ? `<input class="ttype" value="${esc(displayTType)}" readonly />`
+                      : `${transferTypeSelectHtml(rawTransferType)}`
+                  }
+                  ${isLegacySettle ? `<label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="lock" ${isLocked ? "checked" : ""} /> قفل</label>` : ``}
+                </div>
+              </div>
+              <div class="full">
+                <label>واریز/برداشت کننده</label>
+                <input class="name" value="${esc(t.depositor_name || "")}" />
+              </div>
+              <div>
+                <label>مبلغ (ریال)</label>
+                <input class="amt num" value="${t.iran_amount ? fmt(t.iran_amount) : ""}" />
+              </div>
+              <div>
+                <label>کارمزد</label>
+                <input class="fee num" value="${t.deposit_fee ? fmt(t.deposit_fee) : "0"}" />
+              </div>
+              <div>
+                <label>مالیات</label>
+                <input class="tax num" value="${t.tax ? fmt(t.tax) : "0"}" />
+              </div>
+              <div class="full">
+                <label>توضیحات</label>
+                <textarea class="desc">${esc(t.description || "")}</textarea>
+              </div>
+            </div>
+            <div class="mActions">
+              <button class="btn green save">ذخیره</button>
+              <button class="btn red del">حذف</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // bind date picker to all jdate inputs
+    document.querySelectorAll("input.jdate").forEach(el=>{
+      // روی موبایل بعضی مرورگرها با focus زوم می‌کنند؛ اجازه فوکوس نمی‌دهیم
+      el.addEventListener("pointerdown", (e)=>{ e.preventDefault(); el.blur(); openPicker(el); });
+      el.addEventListener("click", (e)=>{ e.preventDefault(); el.blur(); openPicker(el); });
+    });
 
     tbody.querySelectorAll(".amt,.fee,.tax").forEach(el => {
       if (!el.hasAttribute("readonly")) {
@@ -216,7 +401,8 @@
       }
     });
 
-    tbody.querySelectorAll("tr").forEach(tr => {
+    function bindRowHandlers(containerEl, rowSelector){
+      containerEl.querySelectorAll(rowSelector).forEach(tr => {
       const id = tr.getAttribute("data-id");
       const rawTransferType = tr.getAttribute("data-raw-ttype") || "";
       const isSettle = rawTransferType.startsWith("SETTLE_TAX|") || rawTransferType.startsWith("SETTLE_TAX_LOCK|");
@@ -242,7 +428,7 @@
           iran_amount: toNum(tr.querySelector(".amt").value),
           deposit_fee: toNum(tr.querySelector(".fee").value),
           tax: toNum(tr.querySelector(".tax").value),
-          jdate: tr.querySelector(".jdate").value.trim(),
+          jdate: String(tr.querySelector(".jdate")?.value || "").trim(),
           description: tr.querySelector(".desc").value.trim()
         };
 
@@ -272,7 +458,11 @@
 
         await load();
       });
-    });
+      });
+    }
+
+    bindRowHandlers(tbody, "tr");
+    if(mobileList) bindRowHandlers(mobileList, ".mCard");
   }
 
   load();

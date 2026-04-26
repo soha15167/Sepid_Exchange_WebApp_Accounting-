@@ -8,27 +8,10 @@
   <link rel="stylesheet" href="/static/styles.css" />
   <style>
     body{margin:0;padding:0}
-    .wrap{display:grid;grid-template-columns:360px 1fr;gap:14px}
-    @media (max-width: 900px){.wrap{grid-template-columns:1fr}}
+    .wrap{display:block}
     .list{display:flex;flex-direction:column;gap:8px}
     .item{border:1px solid var(--line);border-radius:12px;padding:10px}
     .name{font-weight:900}
-    .pdfViewer{
-      width:100%;
-      height:72vh;
-      border:1px solid var(--line);
-      border-radius:16px;
-      background:#fff;
-      overflow:auto;
-      display:flex;
-      align-items:flex-start;
-      justify-content:center;
-      padding:10px;
-    }
-    .pdfPages{display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:flex-start;width:100%}
-    .pdfPages canvas{max-width:100%;border:1px solid #eee;border-radius:8px}
-    .pdfTools{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%}
-    .pdfTools .btn{padding:8px 10px}
   </style>
 </head>
 <body>
@@ -51,103 +34,11 @@
       <div style="height:14px"></div>
       <div class="muted">برای بخش ایران طراحی شده است.</div>
     </div>
-
-    <div class="card pad">
-      <h2 id="viewerTitle">نمایش PDF</h2>
-      <div class="pdfViewer" id="viewer">
-        <div class="muted">برای پیش‌نمایش، روی «نمایش» بزن.</div>
-      </div>
-    </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
-    const viewer = document.getElementById('viewer');
-    const viewerTitle = document.getElementById('viewerTitle');
-    // نکته: روی بعضی سرورها/مرورها، Worker لود نمی‌شود و پیش‌نمایش fail می‌شود.
-    // برای اینکه «نمایش» همیشه داخل همین صفحه کار کند، Worker را غیرفعال می‌کنیم.
-
     function esc(s){return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");}
-
-    let lastPreviewUrl = "";
-
-    async function renderPdfIntoViewer(arrayBuffer){
-      if(!window.pdfjsLib){
-        viewer.innerHTML = `
-          <div class="muted">
-            پیش‌نمایش داخلی لود نشد (PDF.js). لطفاً اینترنت/فیلتر CDN را چک کن و یک بار Ctrl+F5 بزن.
-          </div>
-        `;
-        return;
-      }
-      try{
-        viewer.innerHTML = `
-          <div class="pdfPages">
-            <div class="pdfTools">
-              <button class="btn" id="pdfPrev">صفحه قبل</button>
-              <div class="pill" id="pdfPageInfo">—</div>
-              <button class="btn" id="pdfNext">صفحه بعد</button>
-              <button class="btn blue" id="pdfOpenTab">باز کردن در تب جدید</button>
-            </div>
-            <canvas id="pdfCanvas"></canvas>
-          </div>
-        `;
-
-        const prevBtn = document.getElementById("pdfPrev");
-        const nextBtn = document.getElementById("pdfNext");
-        const openBtn = document.getElementById("pdfOpenTab");
-        const pageInfo = document.getElementById("pdfPageInfo");
-        const canvas = document.getElementById("pdfCanvas");
-        const ctx = canvas.getContext("2d");
-        if(!ctx) throw new Error("Canvas context not available");
-
-        // disableWorker: جلوگیری از خطای worker و نمایش قطعی در همان صفحه
-        const doc = await window.pdfjsLib.getDocument({data: arrayBuffer, disableWorker: true}).promise;
-        let pageNum = 1;
-
-        async function renderPage(){
-          pageInfo.textContent = `صفحه ${pageNum} از ${doc.numPages}`;
-          prevBtn.disabled = pageNum <= 1;
-          nextBtn.disabled = pageNum >= doc.numPages;
-
-          const page = await doc.getPage(pageNum);
-          const viewport0 = page.getViewport({scale: 1});
-          const maxW = Math.max(320, viewer.clientWidth - 24);
-          // روی موبایل scale کمتر تا رندر راحت‌تر شود
-          const scale = Math.min(1.35, maxW / viewport0.width);
-          const viewport = page.getViewport({scale});
-
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
-          await page.render({canvasContext: ctx, viewport}).promise;
-          viewer.scrollTop = 0;
-        }
-
-        prevBtn.addEventListener("click", async ()=>{
-          if(pageNum > 1){ pageNum -= 1; await renderPage(); }
-        });
-        nextBtn.addEventListener("click", async ()=>{
-          if(pageNum < doc.numPages){ pageNum += 1; await renderPage(); }
-        });
-        openBtn.addEventListener("click", ()=>{
-          if(lastPreviewUrl) window.open(lastPreviewUrl, "_blank");
-        });
-
-        await renderPage();
-      }catch(e){
-        console.error(e);
-        viewer.innerHTML = `
-          <div class="muted">
-            پیش‌نمایش داخلی روی موبایل خطا داد.
-            <div style="margin-top:8px">متن خطا: <b>${esc(e?.message || e || "unknown")}</b></div>
-            <div style="margin-top:8px">
-              ${lastPreviewUrl ? `<a class="btnLink btn blue" href="${lastPreviewUrl}" target="_blank" rel="noopener">باز کردن PDF</a>` : ``}
-            </div>
-          </div>
-        `;
-      }
-    }
 
     function itemHtml(r){
       const title = esc(r.display_name || (r.region.toUpperCase() + " " + r.month));
@@ -196,26 +87,9 @@
         const regenBtn = el.querySelector('[data-act="regen"]');
         const dlBtn = el.querySelector('[data-act="download"]');
         el.querySelector('[data-act="view"]').addEventListener('click', ()=>{
-          viewerTitle.textContent = `نمایش PDF: ${r.region.toUpperCase()} ${r.month}`;
-          (async ()=>{
-            viewer.innerHTML = `<div class="muted">در حال دریافت فایل…</div>`;
-            const url = `/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}?v=${Date.now()}`;
-            lastPreviewUrl = url;
-            // پیش‌نمایش واقعی: PDF را fetch کن و داخل همین صفحه رندر کن (بدون وابستگی به PDF-viewer مرورگر)
-            let res = await fetch(url);
-            if(!res.ok){
-              // اگر حذف شده بود، بازسازی و دوباره تلاش
-              await fetch(`/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}/regenerate`, {method:'POST'});
-              await load();
-              res = await fetch(url);
-            }
-            if(!res.ok){
-              alert("فایل PDF پیدا نشد. یک بار بازسازی را بزن.");
-              return;
-            }
-            const buf = await res.arrayBuffer();
-            await renderPdfIntoViewer(buf);
-          })();
+          // طبق درخواست: روی موبایل/کامپیوتر «نمایش» همیشه در تب جدید باز شود و inline نمایش دهد (بدون دانلود)
+          const url = `/reports/${encodeURIComponent(r.region)}/${encodeURIComponent(r.month)}?v=${Date.now()}`;
+          window.open(url, "_blank", "noopener");
         });
         regenBtn.addEventListener('click', async ()=>{
           try{

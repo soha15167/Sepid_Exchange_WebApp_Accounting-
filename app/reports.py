@@ -223,6 +223,7 @@ def _register_font_name() -> Tuple[str, bool]:
 def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
     _ensure_dirs()
     p = report_path(region, month)
+    tmp = p.with_suffix(".tmp.pdf")
 
     from reportlab.lib import colors  # type: ignore
     from reportlab.lib.pagesizes import A4, landscape  # type: ignore
@@ -238,7 +239,7 @@ def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
         page_size = A4
 
     doc = SimpleDocTemplate(
-        str(p),
+        str(tmp),
         pagesize=page_size,
         leftMargin=24,
         rightMargin=24,
@@ -301,6 +302,58 @@ def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
                 or str(t.transfer_type or "").strip().startswith("SETTLE_RUN|")
             )
         ]
+
+        # جمع برداشت ماه (خروجی‌های واقعی) — همسو با پنل ایران
+        # برداشت = مبلغ + کارمزد + مالیات (برای بانک‌های معمولی؛ صندوق مالیات جداست)
+        withdrawals_by_bank: Dict[str, int] = {}
+        for t in items:
+            if (str(t.iran_type or "").strip() != "خروجی"):
+                continue
+            bank = str(t.bank_name or "").strip()
+            if (not bank) or (bank == "سامان (مالیات)"):
+                continue
+            tt = str(t.transfer_type or "").strip()
+            if tt.startswith("SETTLE_BATCH|"):
+                continue
+            v = int(t.iran_amount or 0) + int(t.deposit_fee or 0) + int(t.tax or 0)
+            withdrawals_by_bank[bank] = withdrawals_by_bank.get(bank, 0) + v
+
+        withdrawals_total = sum(withdrawals_by_bank.values())
+
+        story.append(Paragraph(_fa_text("جمع برداشت ماهانه به تفکیک بانک:"), rtl_style))
+
+        sum_header = [Paragraph(_fa_text("بانک"), rtl_style), Paragraph(_fa_text("جمع برداشت (ریال)"), rtl_style)]
+        sum_rows = [
+            [
+                Paragraph(_fa_text(bank), rtl_style),
+                Paragraph(_fa_text(f"{amt:,}"), rtl_style),
+            ]
+            for bank, amt in sorted(withdrawals_by_bank.items(), key=lambda x: (-x[1], x[0]))
+        ]
+        sum_rows.append(
+            [
+                Paragraph(_fa_text("جمع کل"), rtl_style),
+                Paragraph(_fa_text(f"{withdrawals_total:,}"), rtl_style),
+            ]
+        )
+        sum_table = Table([sum_header] + sum_rows, colWidths=[160, 220], hAlign="RIGHT")
+        sum_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#111827")),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+                    ("FONTNAME", (0, 0), (-1, -1), base_font),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        story.append(sum_table)
+        story.append(Spacer(1, 10))
         # ترتیب و ستون‌ها دقیقاً مثل صفحه گزارش ایران
         header = [
             "ردیف",
@@ -435,7 +488,18 @@ def regenerate_month_pdf(db: Session, region: Region, month: str) -> Path:
         )
         story.append(table)
 
-    doc.build(story)
+    # atomic write to prevent 0-byte PDFs
+    try:
+        doc.build(story)
+        if (not tmp.exists()) or tmp.stat().st_size < 256:
+            raise RuntimeError("PDF generation produced empty file")
+        tmp.replace(p)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
 
     # touch meta updated_at
     meta = _load_meta()

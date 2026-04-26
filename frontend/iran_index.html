@@ -19,6 +19,10 @@
     .modal h3{margin:0 0 10px;font-size:14px}
     .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
     @media (max-width:520px){.grid3{grid-template-columns:1fr}}
+    @media (max-width:700px){
+      /* جلوگیری از زوم ناخواسته موبایل */
+      input, select, textarea{font-size:16px}
+    }
   </style>
 </head>
 <body>
@@ -61,8 +65,8 @@
         <option value="کشاورزی">کشاورزی</option>
       </select>
 
-      <label>تاریخ (شمسی) — کلیک کن پاپ‌اپ باز می‌شه (قابل تایپ هم هست)</label>
-      <input id="jdate" placeholder="1404/10/07" />
+      <label>تاریخ (شمسی)</label>
+      <input id="jdate" placeholder="1404/10/07" readonly />
 
       <label>توضیحات (اختیاری)</label>
       <input id="settle_desc" placeholder="مثلاً تسویه مالیات ماه ..." />
@@ -200,7 +204,9 @@
   }
   function closePop(){ overlay.classList.remove('show'); }
 
-  jdateEl.addEventListener('click', openPop);
+  // جلوگیری از زوم موبایل: focus نگیرد، فقط پاپ‌آپ باز شود
+  jdateEl.addEventListener('pointerdown', (e)=>{ e.preventDefault(); jdateEl.blur(); openPop(); });
+  jdateEl.addEventListener('click', (e)=>{ e.preventDefault(); jdateEl.blur(); openPop(); });
   pm.addEventListener('change', refillDays);
   document.getElementById('closePop').addEventListener('click', closePop);
   document.getElementById('okPop').addEventListener('click', ()=>{
